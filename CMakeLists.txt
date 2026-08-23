@@ -41,6 +41,10 @@ enable_testing()
 function(add_mapledb_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE mapledb)
+    target_include_directories(${name}
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 

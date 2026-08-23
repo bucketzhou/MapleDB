@@ -2,13 +2,13 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-21 12:10:16
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-08-22 20:32:44
+ * @LastEditTime: 2026-08-23 15:49:06
  * @Description:
  */
 
 // TODO: 可以将state_改为 unique_ptr<char[]> state_;的形式
 // TODO: 性能基本等价，但析构和移动可自动生成，降低 double free、泄漏等错误风险。
-#include "slice.h"
+#include "mapledb/slice.h"
 
 #include <cassert>
 #include <cstdint>
@@ -86,6 +86,9 @@ public:
             case KInvalidArgument:
                 res = "InvalidArgument: ";
                 break;
+            default:
+                res = "Unknown: ";
+                break;
         }
         std::uint32_t size = MessageSize(state_);
         memcpy(&size, state_, sizeof(size));
@@ -142,7 +145,7 @@ private:
     }
 
     static std::uint32_t MessageSize(const char* state) noexcept {
-        std::uint32_t size = MessageSize(state);
+        uint32_t size;
         std::memcpy(&size, state, sizeof(size));
         return size;
     }
