@@ -49,3 +49,4 @@ function(add_mapledb_test name)
 endfunction()
 
 add_mapledb_test(daily_test_01)
+add_mapledb_test(daily_test_02)
