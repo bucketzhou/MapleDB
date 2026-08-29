@@ -50,3 +50,4 @@ endfunction()
 
 add_mapledb_test(daily_test_01)
 add_mapledb_test(daily_test_02)
+add_mapledb_test(daily_test_03)
