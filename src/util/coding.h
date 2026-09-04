@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-23 14:12:12
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-08-23 16:47:46
+ * @LastEditTime: 2026-09-03 19:27:37
  * @Description: 整数编解码工具：Fixed32/64 和 Varint32/64,会被 WAL、SSTable 大量使用
  */
 #pragma once
@@ -140,4 +140,15 @@ bool GetVarint64(Slice* input, uint64_t* value);
 
 // 从 Slice 中解码 "varint32长度前缀 + 内容"，结果放入 result
 bool GetLengthPrefixedSlice(Slice* input, Slice* result);
+
+// 返回将 v 编码为 varint32 需要的字节数（1~5）
+inline int VarintLength(uint64_t v) {
+    int len = 1;
+    while (v >= 128) {
+        v >>= 7;
+        len++;
+    }
+    return len;
+}
+
 } // namespace mapledb

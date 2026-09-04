@@ -25,7 +25,7 @@ target_include_directories(mapledb
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
     PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src>
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # target_include_directories(mapledb
@@ -51,3 +51,4 @@ endfunction()
 add_mapledb_test(daily_test_01)
 add_mapledb_test(daily_test_02)
 add_mapledb_test(daily_test_03)
+add_mapledb_test(daily_test_04)

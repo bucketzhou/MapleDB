@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-20 11:56:13
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-08-21 15:28:50
+ * @LastEditTime: 2026-09-03 13:44:23
  * @Description: a zero copy string view, base data structure for mapledb,
  * refered to levelDB::Slice
  */
