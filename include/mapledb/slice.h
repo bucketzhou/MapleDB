@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-20 11:56:13
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-03 13:44:23
+ * @LastEditTime: 2026-09-05 15:41:45
  * @Description: a zero copy string view, base data structure for mapledb,
  * refered to levelDB::Slice
  */
@@ -36,7 +36,7 @@ public:
     Slice& operator=(const Slice&) noexcept = default;
 
     // 删除临时string对象构造Slice
-    Slice(std::string&&) = delete;
+    // Slice(std::string&&) = delete;
 
     // 接口
     [[nodiscard]] const char* Data() const noexcept { return data_; }
