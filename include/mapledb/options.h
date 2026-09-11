@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-23 13:30:59
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-08-23 14:10:34
+ * @LastEditTime: 2026-09-11 17:05:27
  * @Description:
  */
 #pragma once
@@ -15,7 +15,8 @@ struct Options {
     size_t writer_buffer_size = 4 * 1024 * 1024;
     /* --------------------------------- SSTable -------------------------------- */
     // 每个SSTable 数据块的大小
-    size_t block_size = 4 * 1024;
+    size_t block_size             = 4 * 1024;
+    size_t block_restart_interval = 16;
 
     // SSTable 最大文件大小（默认 2MB，参考 LevelDB）
     size_t max_file_size = 2 * 1024 * 1024;
