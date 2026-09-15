@@ -1,0 +1,85 @@
+/*
+ * @Author: bucketzhou zhouyangcumt@163.com
+ * @Date: 2026-09-12 13:28:00
+ * @LastEditors: bucketzhou zhouyangcumt@163.com
+ * @LastEditTime: 2026-09-12 13:28:34
+ * @Description: src/table/table.h
+ * Table：SSTable 文件在内存中的读取接口
+ * 提供 Open（打开文件）/ InternalGet（点查）/ NewIterator（全扫描）
+ * 修复说明:
+ * ReadBlock 从 private 改为 public，供 TwoLevelIterator（table.cpp 内部类）合法访问。
+ */
+
+#pragma once
+
+#include "mapledb/options.h"
+#include "mapledb/slice.h"
+#include "mapledb/status.h"
+#include "table/block.h" // 包含完整的 Block + Block::Iter 定义
+#include "table/format.h"
+
+#include <cstdio>
+#include <string>
+
+namespace mapledb {
+
+class Table {
+public:
+    // 打开一个 SSTable 文件
+    //   filename : 文件路径
+    //   options  : DB 配置（block_size 等）
+    //   table    : 成功时输出新建的 Table 对象（调用方负责 delete）
+    static Status Open(const std::string& filename, const Options& options, Table** table);
+
+    ~Table();
+
+    Table(const Table&)            = delete;
+    Table& operator=(const Table&) = delete;
+
+    // 点查：在 SSTable 中查找 key
+    //   找到时调用 handle_result(arg, found_key, found_value)
+    //   未找到时返回 OK 但不调用回调
+    Status InternalGet(const Slice& key, void* arg,
+                       void (*handle_result)(void*, const Slice&, const Slice&));
+
+    // ── Iterator 抽象接口 ─────────────────────────────────────
+    // 遍历整个 SSTable 的 kv（两级迭代器：Index Block → DataBlock）
+    struct Iterator {
+        virtual ~Iterator()                            = default;
+        virtual bool         Valid() const             = 0;
+        virtual void         SeekToFirst()             = 0;
+        virtual void         Seek(const Slice& target) = 0;
+        virtual void         Next()                    = 0;
+        virtual const Slice& key() const               = 0;
+        virtual const Slice& value() const             = 0;
+        virtual Status       status() const            = 0;
+    };
+
+    // 创建迭代器（调用方负责 delete）
+    Iterator* NewIterator();
+
+    // 文件大小（字节）
+    uint64_t FileSize() const { return file_size_; }
+
+    // ── ReadBlock：public（供 TwoLevelIterator 使用）──────────
+    // 从文件中读取一个 Block（根据 handle 定位）
+    // 返回 Block 对象，调用方负责 delete
+    Status ReadBlock(const BlockHandle& handle, Block** block) const;
+
+private:
+    // Table 的内部数据
+    struct Rep {
+        FILE*       file;
+        uint64_t    file_size;
+        Block*      index_block; // Index Block 常驻内存，避免每次查询都重读
+        Options     options;
+        BlockHandle metaindex_handle;
+    };
+
+    explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}
+
+    Rep*     rep_;
+    uint64_t file_size_;
+};
+
+} // namespace mapledb
