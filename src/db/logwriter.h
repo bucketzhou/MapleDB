@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-05 13:57:15
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-05 13:57:53
+ * @LastEditTime: 2026-09-16 12:42:20
  * @Description: WAL 日志写入器, 负责将 WriteBatch 的二进制内容作为 Record 顺序追加到 WAL 文件
  */
 
@@ -23,6 +23,8 @@ public:
     // dest：WAL 文件路径（文件会被创建或追加）
     // 构造时会打开或创建文件（追加模式）
     explicit Writer(const std::string& dest_filename);
+    // dest_length：已有文件的总字节数（不是 Block 大小），必须与实际长度一致
+    Writer(const std::string& dest_filename, uint64_t dest_length);
 
     ~Writer();
 

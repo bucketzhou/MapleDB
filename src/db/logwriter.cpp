@@ -40,20 +40,28 @@ static uint32_t CRC32(const char* data, size_t len, uint32_t init_crc = 0xFFFFFF
 
 // ── Writer 构造/析构 ─────────────────────────────────────────
 
-Writer::Writer(const std::string& dest_filename) : dest_(nullptr), block_offset_(0) {
-    // 以追加写模式打开文件（不存在则创建）
-    dest_ = fopen(dest_filename.c_str(), "ab");
-    // 注意：如果是从头创建，block_offset_ = 0 是正确的
-    // 如果是追加已有文件（断点续写），需要从文件末尾位置推算 block_offset_
-    // 教学阶段简化：每次启动都假设从新文件开始，或者追加但 block_offset_ 从0算
-    if (dest_) {
-        // 获取当前文件大小以计算 block_offset_
-        long size = ftell(dest_);
-        if (size > 0) {
-            block_offset_ = static_cast<uint32_t>(size % kBlockSize);
-        }
+Writer::Writer(const std::string& dest_filename) : Writer(dest_filename, 0) {
+    if (!dest_)
+        return;
+
+    // 追加模式保证写入在末尾，但这里仍显式定位，以可靠地查询文件长度。
+    if (fseek(dest_, 0, SEEK_END) != 0) {
+        fclose(dest_);
+        dest_ = nullptr;
+        return;
     }
+    const long size = ftell(dest_);
+    if (size < 0) {
+        fclose(dest_);
+        dest_ = nullptr;
+        return;
+    }
+    block_offset_ = static_cast<uint32_t>(static_cast<uint64_t>(size) % kBlockSize);
 }
+
+Writer::Writer(const std::string& dest_filename, uint64_t dest_length) :
+    dest_(fopen(dest_filename.c_str(), "ab")),
+    block_offset_(static_cast<uint32_t>(dest_length % kBlockSize)) {}
 
 Writer::~Writer() {
     if (dest_) {

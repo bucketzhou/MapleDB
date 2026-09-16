@@ -299,6 +299,49 @@ void TestWALLargeRecord() {
     std::cout << "[PASS] WAL Large Record\n";
 }
 
+// 重开已有日志：覆盖普通追加、块尾不足/恰好 7 字节、整块边界和跨块记录。
+void TestWALReopenAppend() {
+    std::cout << "[TEST] WAL Reopen Append...\n";
+    const size_t sizes[] = {100, log::kBlockSize - log::kHeaderSize - 3,
+                            log::kBlockSize - 2 * log::kHeaderSize,
+                            log::kBlockSize - log::kHeaderSize, 40000};
+    for (bool explicit_length : {false, true}) {
+        for (size_t size : sizes) {
+            const std::string path = TestFile("append_" + std::to_string(explicit_length)
+                                              + "_" + std::to_string(size) + ".log");
+            const std::string first(size, 'A');
+            const std::string second(40000, 'B');
+            {
+                log::Writer writer(path);
+                CHECK(writer.AddRecord(Slice(first)).Ok());
+            }
+            auto append = [&](log::Writer& writer) {
+                CHECK(writer.AddRecord(Slice(second)).Ok());
+                CHECK(writer.AddRecord("after_append").Ok());
+            };
+            if (explicit_length) {
+                log::Writer writer(path, static_cast<uint64_t>(fs::file_size(path)));
+                append(writer);
+            } else {
+                log::Writer writer(path);
+                append(writer);
+            }
+
+            log::Reader reader(path);
+            Slice record;
+            std::string scratch;
+            CHECK(reader.ReadRecord(&record, &scratch));
+            CHECK_EQ(record.ToString(), first);
+            CHECK(reader.ReadRecord(&record, &scratch));
+            CHECK_EQ(record.ToString(), second);
+            CHECK(reader.ReadRecord(&record, &scratch));
+            CHECK_EQ(record.ToString(), std::string("after_append"));
+            CHECK(!reader.ReadRecord(&record, &scratch));
+        }
+    }
+    std::cout << "[PASS] WAL Reopen Append\n";
+}
+
 // 崩溃恢复模拟：WAL → MemTable 重建
 void TestWALCrashRecovery() {
     std::cout << "[TEST] WAL Crash Recovery (MemTable rebuild)...\n";
@@ -396,6 +439,7 @@ int main() {
     TestWALSingleRecord();
     TestWALMultipleRecords();
     TestWALLargeRecord();
+    TestWALReopenAppend();
     TestWALCrashRecovery();
 
     CleanupTestDir();

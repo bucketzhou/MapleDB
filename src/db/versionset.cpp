@@ -1,0 +1,340 @@
+/*
+ * @Author: bucketzhou zhouyangcumt@163.com
+ * @Date: 2026-09-16 10:53:53
+ * @LastEditors: bucketzhou zhouyangcumt@163.com
+ * @LastEditTime: 2026-09-16 12:24:34
+ * @Description:
+ * src/db/version_set.cpp
+ * 修复要点：
+ * 1. LogAndApply 里不覆盖 edit 的 next_file 和 last_sequence（改为只补全未设置的字段）
+ * 2. Recover 后正确设置 manifest_file_number_ 和 manifest_writer_
+ * 3. ApplyEdit 里 next_file_number_ 更新逻辑改为"直接取更大值"，不做 +1 的歧义处理
+ */
+
+#if 1
+
+    #include "db/versionset.h"
+
+    #include "util/coding.h"
+
+    #include <algorithm>
+    #include <cassert>
+    #include <cstdio>
+    #include <filesystem>
+    #include <sstream>
+    #include <system_error>
+
+namespace mapledb {
+
+namespace fs = std::filesystem;
+
+// ── 文件名工具函数 ────────────────────────────────────────────
+
+static std::string ManifestFileName(const std::string& dbname, uint64_t number) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "/MANIFEST-%06llu", static_cast<unsigned long long>(number));
+    return dbname + buf;
+}
+
+static std::string CurrentFileName(const std::string& dbname) { return dbname + "/CURRENT"; }
+
+static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number) {
+    char numstr[32];
+    snprintf(numstr, sizeof(numstr), "%06llu", static_cast<unsigned long long>(manifest_number));
+    std::string manifest_base = std::string("MANIFEST-") + numstr;
+
+    std::string current_file = CurrentFileName(dbname);
+    FILE*       f            = fopen(current_file.c_str(), "w");
+    if (!f) {
+        return Status::IOError("cannot write CURRENT: " + current_file);
+    }
+    fprintf(f, "%s\n", manifest_base.c_str());
+    fclose(f);
+    return Status::OK();
+}
+
+// ── VersionSet 构造/析构 ──────────────────────────────────────
+
+VersionSet::VersionSet(const std::string& dbname, const Options& options) :
+    dbname_(dbname), options_(options), next_file_number_(2), last_sequence_(0), log_number_(0),
+    manifest_file_number_(0), manifest_writer_(nullptr) {
+    fs::create_directories(dbname_);
+}
+
+VersionSet::~VersionSet() {
+    delete manifest_writer_;
+    for (int level = 0; level < kNumLevels; level++) {
+        for (FileMetaData* f : files_[level]) {
+            delete f;
+        }
+        files_[level].clear();
+    }
+}
+
+// ── ApplyEdit ─────────────────────────────────────────────────
+
+void VersionSet::ApplyEdit(const VersionEdit& edit) {
+    // 修复1：next_file_number_ 取"当前值"和"edit值+1"的最大值
+    // 不做 "edit.value >= current" 的条件判断，直接更新为更大的
+    if (edit.has_next_file_number()) {
+        // edit 里存的是"下一个可用文件号"，直接使用（不再 +1）
+        // 但要确保不会缩小
+        if (edit.next_file_number() >= next_file_number_) {
+            next_file_number_ = edit.next_file_number();
+        }
+    }
+    if (edit.has_last_sequence() && edit.last_sequence() >= last_sequence_) {
+        last_sequence_ = edit.last_sequence();
+    }
+    if (edit.has_log_number()) {
+        log_number_ = edit.log_number();
+    }
+
+    // 删除文件
+    for (const auto& [level, file_num] : edit.deleted_files()) {
+        auto& fv = files_[level];
+        for (auto it = fv.begin(); it != fv.end(); ++it) {
+            if ((*it)->number == file_num) {
+                delete *it;
+                fv.erase(it);
+                break;
+            }
+        }
+    }
+
+    // 新增文件
+    for (const auto& [level, f] : edit.new_files()) {
+        FileMetaData* meta = new FileMetaData(f);
+        files_[level].push_back(meta);
+    }
+
+    // 排序
+    for (int level = 0; level < kNumLevels; level++) {
+        std::sort(
+            files_[level].begin(), files_[level].end(),
+            [](const FileMetaData* a, const FileMetaData* b) { return a->smallest < b->smallest; });
+    }
+}
+
+// ── EnsureManifestOpen ───────────────────────────────────────
+
+Status VersionSet::EnsureManifestOpen() {
+    if (manifest_writer_ != nullptr)
+        return Status::OK();
+
+    // 分配新文件号给 MANIFEST
+    manifest_file_number_     = next_file_number_++;
+    std::string manifest_path = ManifestFileName(dbname_, manifest_file_number_);
+
+    // 创建新 MANIFEST（wb，覆盖写）
+    manifest_writer_ = new log::Writer(manifest_path);
+
+    // 更新 CURRENT
+    return SetCurrentFile(dbname_, manifest_file_number_);
+}
+
+// ── WriteSnapshot ────────────────────────────────────────────
+
+Status VersionSet::WriteSnapshot() {
+    VersionEdit snapshot;
+    snapshot.SetComparatorName(Slice("leveldb.BytewiseComparator"));
+    snapshot.SetLogNumber(log_number_);
+    // 修复2：写入的 next_file 就是当前的 next_file_number_（不额外+1）
+    snapshot.SetNextFile(next_file_number_);
+    snapshot.SetLastSequence(last_sequence_);
+
+    for (int level = 0; level < kNumLevels; level++) {
+        for (const FileMetaData* f : files_[level]) {
+            snapshot.AddFile(level, f->number, f->file_size, f->smallest, f->largest);
+        }
+    }
+
+    std::string record;
+    snapshot.EncodeTo(&record);
+    return manifest_writer_->AddRecord(Slice(record));
+}
+
+// ── LogAndApply ───────────────────────────────────────────────
+
+Status VersionSet::LogAndApply(VersionEdit* edit) {
+    // 修复3：只补全"用户没有设置的字段"，不覆盖用户已设置的值
+    // （原代码直接 edit->SetNextFile(next_file_number_) 会覆盖用户传入的值）
+    if (!edit->has_next_file_number()) {
+        edit->SetNextFile(next_file_number_);
+    }
+    if (!edit->has_last_sequence()) {
+        edit->SetLastSequence(last_sequence_);
+    }
+    if (!edit->has_log_number()) {
+        edit->SetLogNumber(log_number_);
+    }
+
+    // 确保 MANIFEST 已打开
+    Status s = EnsureManifestOpen();
+    if (!s.Ok())
+        return s;
+
+    // 序列化并写入 MANIFEST
+    std::string record;
+    edit->EncodeTo(&record);
+    s = manifest_writer_->AddRecord(Slice(record));
+    if (!s.Ok())
+        return s;
+
+    manifest_writer_->Flush();
+
+    // 应用到内存
+    ApplyEdit(*edit);
+
+    return Status::OK();
+}
+
+// ── Recover ──────────────────────────────────────────────────
+
+Status VersionSet::Recover() {
+    // ① 读 CURRENT
+    std::string current_path = CurrentFileName(dbname_);
+    FILE*       cf           = fopen(current_path.c_str(), "r");
+    if (!cf) {
+        return Status::IOError("CURRENT file not found: " + current_path);
+    }
+    char current_content[256] = {};
+    if (!fgets(current_content, sizeof(current_content), cf)) {
+        fclose(cf);
+        return Status::Corruption("CURRENT file is empty");
+    }
+    fclose(cf);
+
+    std::string manifest_name(current_content);
+    while (!manifest_name.empty()
+           && (manifest_name.back() == '\n' || manifest_name.back() == '\r')) {
+        manifest_name.pop_back();
+    }
+    if (manifest_name.empty()) {
+        return Status::Corruption("CURRENT file has no content");
+    }
+
+    // ② 解析 MANIFEST 文件号
+    const std::string prefix = "MANIFEST-";
+    if (manifest_name.size() > prefix.size() && manifest_name.substr(0, prefix.size()) == prefix) {
+        try {
+            manifest_file_number_ = std::stoull(manifest_name.substr(prefix.size()));
+        } catch (...) {
+            return Status::Corruption("bad MANIFEST file number in CURRENT");
+        }
+    } else {
+        return Status::Corruption("bad CURRENT file content: " + manifest_name);
+    }
+
+    // 修复4：next_file_number_ 初始值设为 manifest_file_number_+1
+    // 后续 ApplyEdit 会根据 edit 里的值继续更新
+    next_file_number_ = manifest_file_number_ + 1;
+
+    std::string manifest_path = dbname_ + "/" + manifest_name;
+
+    // ③ 逐条读取 MANIFEST 并重放
+    log::Reader reader(manifest_path);
+    Slice       record;
+    std::string scratch;
+
+    int record_count = 0; // ← 加这行
+
+    while (reader.ReadRecord(&record, &scratch)) {
+        record_count++;
+        printf("[Recover] Read record #%d, size=%zu\n", record_count, record.Size()); // ← 加这行
+
+        VersionEdit edit;
+        Status      s = edit.DecodeFrom(record);
+        if (!s.Ok()) {
+            printf("[Recover] DecodeFrom FAILED: %s\n", s.ToString().c_str()); // ← 加这行
+            return Status::Corruption("MANIFEST record decode error: " + s.ToString());
+        }
+        printf("[Recover] Edit: nfiles=%zu, dfiles=%zu\n", // ← 加这行
+               edit.new_files().size(), edit.deleted_files().size());
+
+        ApplyEdit(edit);
+
+        printf("[Recover] After Apply: L0=%d L1=%d\n", // ← 加这行
+               NumFiles(0), NumFiles(1));
+    }
+
+    printf("[Recover] Total records read: %d\n", record_count); // ← 加这行
+
+    // ④ 确保 next_file_number_ 不小于所有已知文件号+1
+    for (int level = 0; level < kNumLevels; level++) {
+        for (const FileMetaData* f : files_[level]) {
+            if (f->number >= next_file_number_) {
+                next_file_number_ = f->number + 1;
+            }
+        }
+    }
+    // manifest 本身也要算进去
+    if (manifest_file_number_ >= next_file_number_) {
+        next_file_number_ = manifest_file_number_ + 1;
+    }
+
+    // ⑤ 修复5：Recover 之后，manifest_writer_ 必须正确指向现有 MANIFEST
+    //    使用文件实际大小初始化 block_offset_，保证追加写正确
+    delete manifest_writer_;
+    manifest_writer_ = nullptr;
+
+    std::error_code size_error;
+    const uint64_t manifest_size = fs::file_size(manifest_path, size_error);
+    if (size_error) {
+        return Status::IOError("cannot get MANIFEST size: " + manifest_path,
+                               size_error.message());
+    }
+    // 用带初始偏移量的构造函数，确保 block_offset_ 正确
+    manifest_writer_ = new log::Writer(manifest_path, manifest_size);
+
+    return Status::OK();
+}
+
+// ── FindFile ─────────────────────────────────────────────────
+
+int VersionSet::FindFile(const std::vector<FileMetaData*>& files, const Slice& key) {
+    int left  = 0;
+    int right = static_cast<int>(files.size());
+    while (left < right) {
+        int mid = (left + right) / 2;
+        if (files[mid]->largest < key.ToString()) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    return left;
+}
+
+bool VersionSet::AfterFile(const Slice& key, const FileMetaData* f) {
+    return !f->largest.empty() && key.ToString() > f->largest;
+}
+
+bool VersionSet::BeforeFile(const Slice& key, const FileMetaData* f) {
+    return !f->smallest.empty() && key.ToString() < f->smallest;
+}
+
+void VersionSet::GetOverlappingInputs(int level, const std::string& smallest_key,
+                                      const std::string&          largest_key,
+                                      std::vector<FileMetaData*>* inputs) const {
+    inputs->clear();
+    for (FileMetaData* f : files_[level]) {
+        if (f->largest >= smallest_key && f->smallest <= largest_key) {
+            inputs->push_back(f);
+        }
+    }
+}
+
+uint64_t VersionSet::TotalFileSize() const {
+    uint64_t total = 0;
+    for (int level = 0; level < kNumLevels; level++) {
+        for (const FileMetaData* f : files_[level]) {
+            total += f->file_size;
+        }
+    }
+    return total;
+}
+
+} // namespace mapledb
+
+#endif
