@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:23:59
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-12 13:24:30
+ * @LastEditTime: 2026-09-17 16:04:04
  * @Description: Block：SSTable 中一个 Block 的内存表示,提供带 Restart Point 二分查找的迭代器
  */
 
@@ -11,6 +11,7 @@
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
 #include "util/coding.h"
+#include "util/comparator.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -20,21 +21,21 @@ namespace mapledb {
 
 // ── Comparator 抽象接口 ───────────────────────────────────────
 
-class Comparator {
-public:
-    virtual ~Comparator()                                     = default;
-    virtual int Compare(const Slice& a, const Slice& b) const = 0;
-};
+// class Comparator {
+// public:
+//     virtual ~Comparator()                                     = default;
+//     virtual int Compare(const Slice& a, const Slice& b) const = 0;
+// };
 
-class BytewiseComparatorImpl : public Comparator {
-public:
-    int Compare(const Slice& a, const Slice& b) const override { return a.Compare(b); }
-};
+// class BytewiseComparatorImpl : public Comparator {
+// public:
+//     int Compare(const Slice& a, const Slice& b) const override { return a.Compare(b); }
+// };
 
-inline const Comparator* BytewiseComparator() {
-    static BytewiseComparatorImpl inst;
-    return &inst;
-}
+// inline const Comparator* BytewiseComparator() {
+//     static BytewiseComparatorImpl inst;
+//     return &inst;
+// }
 
 // ════════════════════════════════════════════════════════
 // Block

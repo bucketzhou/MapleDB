@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-02 18:25:43
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-03 19:35:05
+ * @LastEditTime: 2026-09-17 16:04:14
  * @Description:
  *      内部键格式定义：InternalKey、SequenceNumber、ValueType
  *      以及用于查找的 LookupKey 和比较器 InternalKeyComparator
@@ -13,6 +13,7 @@
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
 #include "util/coding.h"
+#include "util/comparator.h"
 
 #include <cstdint>
 #include <string>
@@ -76,7 +77,8 @@ inline ValueType GetValueType(const Slice& internal_key) {
 //   查询时用 Seek(user_key + kMaxSeq) 定位，
 //   第一条 user_key 匹配的记录就是最新版本，直接读出，无需继续扫描。
 // ════════════════════════════════════════════════════════
-class InternalKeyComparator {
+// class InternalKeyComparator {
+class InternalKeyComparator : public Comparator {
 public:
     // 比较两个 InternalKey（以 Slice 形式传入）
     int Compare(const Slice& a, const Slice& b) const;

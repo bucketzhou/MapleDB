@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:29:33
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-12 13:35:19
+ * @LastEditTime: 2026-09-17 16:23:09
  * @Description:
  *Table 的实现：Open / ReadBlock / InternalGet / NewIterator
  *修复说明：1. #include "table/block.h" 已包含完整的 Block::Iter 定义，消除"不完整类型"错误。
@@ -45,7 +45,8 @@ static uint32_t TblCRC32(const char* data, size_t len) {
 
 // ── Table::Open ──────────────────────────────────────────────
 
-Status Table::Open(const std::string& filename, const Options& options, Table** table) {
+Status Table::Open(const std::string& filename, const Options& options, const Comparator* cmp,
+                   Table** table) {
     *table = nullptr;
 
     FILE* f = fopen(filename.c_str(), "rb");
@@ -110,6 +111,7 @@ Status Table::Open(const std::string& filename, const Options& options, Table** 
     rep->index_block      = index_block;
     rep->options          = options;
     rep->metaindex_handle = footer.metaindex_handle();
+    rep->cmp              = cmp; // ← 保存比较器
 
     *table = new Table(rep);
     return Status::OK();
@@ -159,7 +161,7 @@ Status Table::InternalGet(const Slice& key, void* arg,
     Status s;
 
     // ① 在 Index Block 里 Seek(key)，找目标 DataBlock 的 handle
-    Block::Iter* iiter = rep_->index_block->NewIterator(BytewiseComparator());
+    Block::Iter* iiter = rep_->index_block->NewIterator(rep_->cmp);
     iiter->Seek(key);
 
     if (iiter->Valid()) {
@@ -176,7 +178,7 @@ Status Table::InternalGet(const Slice& key, void* arg,
 
             if (s.Ok()) {
                 // ④ 在 DataBlock 里 Seek(key)
-                Block::Iter* diter = data_block->NewIterator(BytewiseComparator());
+                Block::Iter* diter = data_block->NewIterator(rep_->cmp);
                 diter->Seek(key);
 
                 if (diter->Valid()) {

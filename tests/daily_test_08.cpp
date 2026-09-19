@@ -31,7 +31,7 @@ static void              SetupTestDir() { fs::create_directories(kTestDir); }
 static void              CleanupTestDir() { fs::remove_all(kTestDir); }
 static std::string       SubDir(const std::string& n) {
     std::string d = kTestDir + "/" + n;
-    // fs::remove_all(d);      // ← 加这行：先清空
+    fs::remove_all(d); // ← 加这行：先清空
     fs::create_directories(d);
     return d;
 }

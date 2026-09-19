@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:28:00
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-12 13:28:34
+ * @LastEditTime: 2026-09-17 15:42:26
  * @Description: src/table/table.h
  * Table：SSTable 文件在内存中的读取接口
  * 提供 Open（打开文件）/ InternalGet（点查）/ NewIterator（全扫描）
@@ -27,9 +27,18 @@ class Table {
 public:
     // 打开一个 SSTable 文件
     //   filename : 文件路径
-    //   options  : DB 配置（block_size 等）
+    //   options  : DB 配置
+    //   cmp      : 用于 Block 内比较的 Comparator
+    //              存 InternalKey 的 SSTable 传 InternalKeyComparator
+    //              存普通 key 的 SSTable 传 BytewiseComparator()（默认）
     //   table    : 成功时输出新建的 Table 对象（调用方负责 delete）
-    static Status Open(const std::string& filename, const Options& options, Table** table);
+    static Status Open(const std::string& filename, const Options& options, const Comparator* cmp,
+                       Table** table);
+
+    // 兼容旧接口：不传 cmp 时默认用 BytewiseComparator
+    static Status Open(const std::string& filename, const Options& options, Table** table) {
+        return Open(filename, options, BytewiseComparator(), table);
+    }
 
     ~Table();
 
@@ -69,11 +78,12 @@ public:
 private:
     // Table 的内部数据
     struct Rep {
-        FILE*       file;
-        uint64_t    file_size;
-        Block*      index_block; // Index Block 常驻内存，避免每次查询都重读
-        Options     options;
-        BlockHandle metaindex_handle;
+        FILE*             file;
+        uint64_t          file_size;
+        Block*            index_block; // Index Block 常驻内存，避免每次查询都重读
+        Options           options;
+        BlockHandle       metaindex_handle;
+        const Comparator* cmp; // ← 新增：存储传入的比较器
     };
 
     explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}
