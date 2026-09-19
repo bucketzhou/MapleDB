@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
+#include <set>
 #include <vector>
 
 namespace mapledb {
@@ -227,8 +228,11 @@ Status DBImpl::CompactMemTable() {
         return s;
     }
 
-    if (file_size == 0) {
-        // imm_ 为空，什么都不做（不常见，保护性判断）
+    if (file_size == 0 || smallest_key.empty()) {
+        std::string ghost_path = TableFileName(file_number);
+        if (fs::exists(ghost_path)) {
+            fs::remove(ghost_path); // 清理写出的空壳文件
+        }
         imm_->Unref();
         imm_ = nullptr;
         return Status::OK();
@@ -261,6 +265,8 @@ Status DBImpl::CompactMemTable() {
             } catch (...) {}
         }
     }
+
+    MaybeScheduleCompaction(); // ← Day 10 新增
 
     return Status::OK();
 }
@@ -537,6 +543,343 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, SequenceNumber* max_sequence)
     }
 
     return Status::OK();
+}
+
+namespace {
+
+class MergeIterator {
+public:
+    // 接管所有 Table::Iterator* 的所有权
+    MergeIterator(std::vector<Table::Iterator*> iters, const InternalKeyComparator* cmp) :
+        iters_(std::move(iters)), cmp_(cmp), current_(-1) {}
+
+    ~MergeIterator() {
+        for (auto* it : iters_)
+            delete it;
+    }
+
+    void SeekToFirst() {
+        for (auto* it : iters_)
+            it->SeekToFirst();
+        FindSmallest(); // 找所有迭代器中最小的
+    }
+
+    bool         Valid() const { return current_ >= 0; }
+    const Slice& key() const { return iters_[current_]->key(); }
+    const Slice& value() const { return iters_[current_]->value(); }
+
+    void Next() {
+        assert(Valid());
+        iters_[current_]->Next(); // 当前最小迭代器前进一步
+        FindSmallest();           // 重新找最小
+    }
+    Status status() const {
+        for (auto* it : iters_) {
+            if (!it->status().Ok())
+                return it->status();
+        }
+        return Status::OK();
+    }
+
+private:
+    void FindSmallest() {
+        current_ = -1;
+        for (int i = 0; i < static_cast<int>(iters_.size()); i++) {
+            if (!iters_[i]->Valid())
+                continue;
+            if (current_ < 0 || cmp_->Compare(iters_[i]->key(), iters_[current_]->key()) < 0) {
+                current_ = i;
+            }
+        }
+    }
+
+    std::vector<Table::Iterator*> iters_;
+    const InternalKeyComparator*  cmp_;
+    int                           current_; // -1 表示无效
+};
+
+} // anonymous namespace
+
+uint64_t DBImpl::LevelMaxBytes(int level) {
+    // L1: 10MB, L2: 100MB, L3: 1GB ...（每层 ×10）
+    uint64_t result = 10ULL * 1024 * 1024; // L1 基准 = 10MB
+    for (int i = 1; i < level; i++) {
+        result *= 10;
+    }
+    return result;
+}
+
+bool DBImpl::NeedsCompaction(int* level) const {
+    // L0：文件数超过阈值
+    if (versions_.NumFiles(0) >= options_.l0_compaction_trigger) {
+        *level = 0;
+        return true;
+    }
+    // L1+：总大小超过阈值（不检查最后一层，无下一层可合并到）
+    for (int l = 1; l < kNumLevels - 1; l++) {
+        uint64_t total = 0;
+        for (const auto* f : versions_.GetFiles(l)) {
+            total += f->file_size;
+        }
+        if (total > LevelMaxBytes(l)) {
+            *level = l;
+            return true;
+        }
+    }
+    return false;
+}
+
+DBImpl::Compaction* DBImpl::PickCompaction() {
+    int level = 0;
+    if (!NeedsCompaction(&level))
+        return nullptr;
+
+    auto* c  = new Compaction();
+    c->level = level;
+
+    const auto& level_files = versions_.GetFiles(level);
+    if (level_files.empty()) {
+        delete c;
+        return nullptr;
+    }
+
+    if (level == 0) {
+        // L0：必须全选（文件间可能有 key 重叠）
+        c->inputs[0] = level_files;
+    } else {
+        // L1+：选第一个文件（简化策略）
+        c->inputs[0].push_back(level_files[0]);
+    }
+
+    // 计算 inputs[0] 的整体 key 范围
+    std::string smallest, largest;
+    for (const auto* f : c->inputs[0]) {
+        if (smallest.empty() || icmp_.Compare(Slice(f->smallest), Slice(smallest)) < 0)
+            smallest = f->smallest;
+        if (largest.empty() || icmp_.Compare(Slice(f->largest), Slice(largest)) > 0)
+            largest = f->largest;
+    }
+
+    // 找 level+1 中与上述范围有重叠的文件
+    versions_.GetOverlappingInputs(level + 1, smallest, largest, &c->inputs[1]);
+
+    return c;
+}
+
+Status DBImpl::DoCompactionWork(Compaction* c) {
+    Status status;
+
+    // ① 创建各输入文件的迭代器
+    //    使用作用域块确保迭代器在 tables 之前析构
+    std::vector<Table*> tables;
+    {
+        std::vector<Table::Iterator*> iters;
+
+        for (int which = 0; which < 2; which++) {
+            for (const auto* f : c->inputs[which]) {
+                Table* t = nullptr;
+                status   = Table::Open(TableFileName(f->number), options_, &icmp_, &t);
+                if (!status.Ok()) {
+                    for (auto* it : iters)
+                        delete it;
+                    for (auto* tbl : tables)
+                        delete tbl;
+                    return status;
+                }
+                tables.push_back(t);
+                iters.push_back(t->NewIterator());
+            }
+        }
+
+        // ② 多路归并迭代器（接管 iters 所有权）
+        MergeIterator merge(std::move(iters), &icmp_);
+
+        // ③ 合并状态
+        std::string current_user_key;
+        bool        has_current_user_key = false;
+
+        TableBuilder* builder       = nullptr;
+        uint64_t      output_number = 0;
+        std::string   output_smallest;
+        std::string   output_largest;
+
+        // 完成当前输出文件的辅助 lambda
+        auto FinishCurrentOutput = [&]() -> Status {
+            if (builder == nullptr)
+                return Status::OK();
+
+            Status s = builder->Finish();
+            if (s.Ok() && builder->NumEntries() > 0) {
+                // 获取文件实际大小
+                uint64_t fsize = 0;
+                FILE*    fp    = fopen(TableFileName(output_number).c_str(), "rb");
+                if (fp) {
+                    fseek(fp, 0, SEEK_END);
+                    fsize = static_cast<uint64_t>(ftell(fp));
+                    fclose(fp);
+                }
+                auto* meta      = new FileMetaData();
+                meta->number    = output_number;
+                meta->file_size = fsize;
+                meta->smallest  = output_smallest;
+                meta->largest   = output_largest;
+                c->outputs.push_back(meta);
+            } else if (s.Ok()) {
+                // 空文件，删掉
+                fs::remove(TableFileName(output_number));
+            }
+            delete builder;
+            builder = nullptr;
+            return s;
+        };
+
+        // ④ 归并主循环
+        for (merge.SeekToFirst(); merge.Valid() && status.Ok(); merge.Next()) {
+            const Slice ik  = merge.key();
+            const Slice val = merge.value();
+
+            if (ik.Size() < 8)
+                continue; // 跳过格式异常的 key
+
+            Slice     user_key = ExtractUserKey(ik);
+            ValueType type     = GetValueType(ik);
+
+            bool drop = false;
+
+            if (has_current_user_key && Slice(current_user_key).Compare(user_key) == 0) {
+                // 同一 user_key 的旧版本，直接丢弃
+                drop = true;
+            } else {
+                current_user_key.assign(user_key.Data(), user_key.Size());
+                has_current_user_key = true;
+            }
+
+            // 尝试丢弃 tombstone：只有当更深层级不存在该 user_key 时才安全丢弃
+            if (!drop && type == kTypeDeletion) {
+                bool has_deeper = false;
+                for (int l = c->level + 2; l < kNumLevels && !has_deeper; l++) {
+                    for (const auto* f : versions_.GetFiles(l)) {
+                        Slice fsmall = ExtractUserKey(Slice(f->smallest));
+                        Slice flarge = ExtractUserKey(Slice(f->largest));
+                        if (user_key.Compare(fsmall) >= 0 && user_key.Compare(flarge) <= 0) {
+                            has_deeper = true;
+                            break;
+                        }
+                    }
+                }
+                if (!has_deeper)
+                    drop = true;
+            }
+
+            if (drop)
+                continue;
+
+            // ⑤ 写入输出文件
+            if (builder == nullptr) {
+                output_number   = versions_.NewFileNumber();
+                output_smallest = std::string(ik.Data(), ik.Size());
+                output_largest  = output_smallest;
+                builder         = new TableBuilder(TableFileName(output_number), options_);
+            }
+
+            output_largest = std::string(ik.Data(), ik.Size());
+            builder->Add(ik, val);
+
+            // 超过单文件大小限制则切割输出文件
+            if (builder->FileSize() >= options_.max_file_size) {
+                status = FinishCurrentOutput();
+            }
+        }
+
+        // ⑥ 完成最后一个输出文件
+        if (status.Ok()) {
+            status = FinishCurrentOutput();
+        } else {
+            // 出错时也要清理 builder
+            if (builder) {
+                builder->Abandon();
+                delete builder;
+                builder = nullptr;
+            }
+        }
+
+        if (status.Ok())
+            status = merge.status();
+
+    } // merge（及其迭代器）在此析构，之后才安全删除 tables
+
+    for (auto* t : tables)
+        delete t;
+    return status;
+}
+
+Status DBImpl::InstallCompactionResults(Compaction* c) {
+    VersionEdit edit;
+
+    // 标记删除所有输入文件
+    for (const auto* f : c->inputs[0])
+        edit.DeleteFile(c->level, f->number);
+    for (const auto* f : c->inputs[1])
+        edit.DeleteFile(c->level + 1, f->number);
+
+    // 注册所有输出文件（在 level+1）
+    for (const auto* f : c->outputs)
+        edit.AddFile(c->level + 1, f->number, f->file_size, f->smallest, f->largest);
+
+    return versions_.LogAndApply(&edit);
+}
+
+void DBImpl::RemoveObsoleteFiles() {
+    // 收集所有"活跃"文件号（VersionSet 当前持有的所有 SSTable）
+    std::set<uint64_t> live;
+    for (int level = 0; level < kNumLevels; level++) {
+        for (const auto* f : versions_.GetFiles(level)) {
+            live.insert(f->number);
+        }
+    }
+    // 保留当前 WAL 和 MANIFEST 文件
+    live.insert(log_number_);
+    live.insert(versions_.ManifestFileNumber());
+
+    // 扫描目录，删除不在 live 集合里的 .ldb 文件
+    for (const auto& entry : fs::directory_iterator(dbname_)) {
+        const std::string fname = entry.path().filename().string();
+        if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".ldb") {
+            try {
+                uint64_t num = std::stoull(fname);
+                if (live.find(num) == live.end()) {
+                    fs::remove(entry.path());
+                }
+            } catch (...) {}
+        }
+    }
+}
+
+// ── MaybeScheduleCompaction ───────────────────────────────────
+
+void DBImpl::MaybeScheduleCompaction() {
+    int level = 0;
+    if (!NeedsCompaction(&level))
+        return;
+
+    Compaction* c = PickCompaction();
+    if (c == nullptr)
+        return;
+
+    Status s = DoCompactionWork(c);
+    if (s.Ok()) {
+        s = InstallCompactionResults(c);
+    }
+    if (s.Ok()) {
+        RemoveObsoleteFiles();
+    }
+
+    delete c;
+
+    // 递归检查：一次 Compaction 完成后可能触发下一层
+    if (s.Ok()) {
+        MaybeScheduleCompaction();
+    }
 }
 
 } // namespace mapledb

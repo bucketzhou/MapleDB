@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-17 11:18:17
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-17 11:20:50
+ * @LastEditTime: 2026-09-19 12:12:10
  * @Description: src/db/db_impl.h
  * DBImpl：DB 接口的核心实现
  * 持有所有子系统（WAL、MemTable、VersionSet），串联读写流程
@@ -47,6 +47,17 @@ public:
     Status Open();
 
 private:
+    // ── Major Compaction 描述 ────────────────────────────────────
+    // 描述一次 Major Compaction 的输入文件和输出文件
+    struct Compaction {
+        int                        level;     // 被合并的层（输出到 level+1）
+        std::vector<FileMetaData*> inputs[2]; // [0]=level层文件, [1]=level+1层文件
+        std::vector<FileMetaData*> outputs;   // 合并产生的新文件（在 level+1）
+        ~Compaction() {
+            for (auto* f : outputs)
+                delete f;
+        }
+    };
     // ── 写路径 ────────────────────────────────────────────────
 
     // 以 WriteBatch 写入（Put/Delete 的底层实现）
@@ -83,6 +94,26 @@ private:
     std::string TableFileName(uint64_t number) const;
     std::string LogFileName(uint64_t number) const;
 
+    // 返回第 level 层的大小上限（L1=10MB, L2=100MB, ...）
+    static uint64_t LevelMaxBytes(int level);
+
+    // 检查是否需要触发 Major Compaction，返回需要合并的层
+    bool NeedsCompaction(int* level) const;
+
+    // 选出需要合并的文件，返回值由调用方 delete
+    Compaction* PickCompaction();
+
+    // 多路归并主循环：读输入文件，去重，写出新 SSTable
+    Status DoCompactionWork(Compaction* c);
+
+    // 将合并结果原子写入 VersionSet
+    Status InstallCompactionResults(Compaction* c);
+
+    // 删除磁盘上已不在 VersionSet 中的旧 SSTable 文件
+    void RemoveObsoleteFiles();
+
+    // 判断是否需要 Major Compaction，如需要则执行
+    void MaybeScheduleCompaction();
     // ── 成员变量 ──────────────────────────────────────────────
     const std::string     dbname_;
     const Options         options_;

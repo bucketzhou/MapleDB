@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-16 10:53:53
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-16 12:24:34
+ * @LastEditTime: 2026-09-19 12:19:00
  * @Description:
  * src/db/version_set.cpp
  * 修复要点：
@@ -181,7 +181,9 @@ Status VersionSet::LogAndApply(VersionEdit* edit) {
     if (!s.Ok())
         return s;
 
-    manifest_writer_->Flush();
+    s = manifest_writer_->Flush();
+    if (!s.Ok())
+        return s;
 
     // 应用到内存
     ApplyEdit(*edit);
@@ -279,10 +281,9 @@ Status VersionSet::Recover() {
     manifest_writer_ = nullptr;
 
     std::error_code size_error;
-    const uint64_t manifest_size = fs::file_size(manifest_path, size_error);
+    const uint64_t  manifest_size = fs::file_size(manifest_path, size_error);
     if (size_error) {
-        return Status::IOError("cannot get MANIFEST size: " + manifest_path,
-                               size_error.message());
+        return Status::IOError("cannot get MANIFEST size: " + manifest_path, size_error.message());
     }
     // 用带初始偏移量的构造函数，确保 block_offset_ 正确
     manifest_writer_ = new log::Writer(manifest_path, manifest_size);
@@ -293,11 +294,13 @@ Status VersionSet::Recover() {
 // ── FindFile ─────────────────────────────────────────────────
 
 int VersionSet::FindFile(const std::vector<FileMetaData*>& files, const Slice& key) {
-    int left  = 0;
-    int right = static_cast<int>(files.size());
+    InternalKeyComparator icmp;
+    int                   left  = 0;
+    int                   right = static_cast<int>(files.size());
     while (left < right) {
         int mid = (left + right) / 2;
-        if (files[mid]->largest < key.ToString()) {
+        // 用 InternalKeyComparator 正确比较（user_key 升序，seq 降序）
+        if (icmp.Compare(Slice(files[mid]->largest), key) < 0) {
             left = mid + 1;
         } else {
             right = mid;
@@ -318,8 +321,25 @@ void VersionSet::GetOverlappingInputs(int level, const std::string& smallest_key
                                       const std::string&          largest_key,
                                       std::vector<FileMetaData*>* inputs) const {
     inputs->clear();
+    // for (FileMetaData* f : files_[level]) {
+    //     if (f->largest >= smallest_key && f->smallest <= largest_key) {
+    //         inputs->push_back(f);
+    //     }
+    // }
+
+    // 去掉 8 字节 tag，只留 user_key
+    auto ExtractUK = [](const std::string& ik) -> std::string {
+        return ik.size() >= 8 ? ik.substr(0, ik.size() - 8) : ik;
+    };
+    std::string small_uk = ExtractUK(smallest_key);
+    std::string large_uk = ExtractUK(largest_key);
+
     for (FileMetaData* f : files_[level]) {
-        if (f->largest >= smallest_key && f->smallest <= largest_key) {
+        std::string f_small_uk = ExtractUK(f->smallest);
+        std::string f_large_uk = ExtractUK(f->largest);
+        // 区间重叠：[f_small, f_large] ∩ [small, large] ≠ ∅
+        // ⟺ f_large >= small AND f_small <= large
+        if (f_large_uk >= small_uk && f_small_uk <= large_uk) {
             inputs->push_back(f);
         }
     }
