@@ -2,13 +2,16 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-08-23 13:30:59
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-11 17:05:27
+ * @LastEditTime: 2026-09-21 07:57:29
  * @Description:
  */
 #pragma once
 #include <cstddef>
 #include <cstdint>
 namespace mapledb {
+
+class Cache;
+
 struct Options {
     /* -------------------------------- MemTable -------------------------------- */
     // 写满多少字节后触发flush，参考levelDB，4mb
@@ -32,5 +35,11 @@ struct Options {
     /* ----------------------------------- 通用 ----------------------------------- */
     // 如果 DB 目录不存在，是否自动创建
     bool create_if_missing = true;
+
+    // SSTable Data Block 缓存（可选）。
+    // 若非 nullptr，Table::ReadBlock 会先查询此缓存再访问磁盘。
+    // 缓存由调用方创建和拥有（DB 不负责 delete）。
+    // 示例：options.block_cache = minidb::NewLRUCache(8 * 1024 * 1024); // 8MB
+    Cache* block_cache = nullptr;
 };
 } // namespace mapledb

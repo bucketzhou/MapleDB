@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-17 11:18:17
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-19 12:12:10
+ * @LastEditTime: 2026-09-21 08:01:06
  * @Description: src/db/db_impl.h
  * DBImpl：DB 接口的核心实现
  * 持有所有子系统（WAL、MemTable、VersionSet），串联读写流程
@@ -29,7 +29,7 @@
     #include <string>
 
 namespace mapledb {
-
+class TableCache;
 class DBImpl : public DB {
 public:
     DBImpl(const Options& options, const std::string& dbname);
@@ -126,6 +126,8 @@ private:
     uint64_t     log_number_; // 当前 WAL 文件号
 
     VersionSet versions_; // SSTable 文件管理
+
+    TableCache* table_cache_;
 };
 
 } // namespace mapledb

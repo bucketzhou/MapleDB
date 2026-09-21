@@ -3,6 +3,7 @@
 
 #include "db/dbimpl.h"
 
+#include "db/tablecache.h"
 #include "db/writebatch.h"
 #include "util/coding.h"
 
@@ -31,11 +32,14 @@ std::string DBImpl::LogFileName(uint64_t number) const {
     return dbname_ + buf;
 }
 
+static constexpr int kTableCacheSize = 100; // 最多缓存 100 个 Table 对象
+
 // ── 构造/析构 ──────────────────────────────────────────────────
 
 DBImpl::DBImpl(const Options& options, const std::string& dbname) :
     dbname_(dbname), options_(options), icmp_(), mem_(nullptr), imm_(nullptr), log_writer_(nullptr),
-    log_number_(0), versions_(dbname, options) {}
+    log_number_(0), versions_(dbname, options),
+    table_cache_(new TableCache(dbname, options, &icmp_, kTableCacheSize)) {}
 
 DBImpl::~DBImpl() {
     delete log_writer_;
@@ -43,6 +47,7 @@ DBImpl::~DBImpl() {
         mem_->Unref();
     if (imm_)
         imm_->Unref();
+    delete table_cache_;
 }
 
 // ════════════════════════════════════════════════════════
@@ -426,15 +431,76 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
 
 // ── SearchSST：在一个 SSTable 文件里查找 internal_key ─────────
 
+// Status DBImpl::SearchSST(const FileMetaData* file, const Slice& internal_key, std::string* value,
+//                          bool* found) {
+//     *found = false;
+
+//     std::string path  = TableFileName(file->number);
+//     Table*      table = nullptr;
+//     Status      s     = Table::Open(path, options_, &icmp_, &table);
+//     if (!s.Ok())
+//         return s;
+
+//     // 提取查询的 user_key（internal_key 去掉末尾 8 字节 tag）
+//     Slice query_user_key(internal_key.Data(),
+//                          internal_key.Size() > 8 ? internal_key.Size() - 8 : 0);
+
+//     struct SearchResult {
+//         std::string* value;
+//         bool         found;
+//         bool         is_deletion;
+//         Slice        query_user_key; // 用于回调里验证 user_key
+//     } result{value, false, false, query_user_key};
+
+//     s = table->InternalGet(internal_key, &result, [](void* arg, const Slice& k, const Slice& v) {
+//         auto* r = static_cast<SearchResult*>(arg);
+
+//         if (k.Size() < 8)
+//             return;
+
+//         // ← 关键：验证 user_key 是否匹配
+//         Slice found_user_key(k.Data(), k.Size() - 8);
+//         if (found_user_key.Compare(r->query_user_key) != 0) {
+//             // Seek 找到了不同 user_key 的记录（目标 key 不存在于此文件）
+//             return;
+//         }
+
+//         uint64_t tag  = DecodeFixed64(k.Data() + k.Size() - 8);
+//         uint8_t  type = tag & 0xFF;
+
+//         if (type == static_cast<uint8_t>(kTypeValue)) {
+//             r->value->assign(v.Data(), v.Size());
+//             r->found       = true;
+//             r->is_deletion = false;
+//         } else {
+//             // kTypeDeletion：tombstone
+//             r->found       = true;
+//             r->is_deletion = true;
+//         }
+//     });
+
+//     if (!s.Ok()) {
+//         delete table;
+//         return s;
+//     }
+
+//     if (result.found) {
+//         *found = true;
+//         if (result.is_deletion) {
+//             s = Status::NotFound(Slice());
+//         }
+//     }
+
+//     delete table;
+//     return s;
+// }
+
+// ── SearchSST：在一个 SSTable 文件里查找 internal_key ─────────
+// Day11: 使用 table_cache_ 获取 Table（命中缓存则无需重新打开文件）
+
 Status DBImpl::SearchSST(const FileMetaData* file, const Slice& internal_key, std::string* value,
                          bool* found) {
     *found = false;
-
-    std::string path  = TableFileName(file->number);
-    Table*      table = nullptr;
-    Status      s     = Table::Open(path, options_, &icmp_, &table);
-    if (!s.Ok())
-        return s;
 
     // 提取查询的 user_key（internal_key 去掉末尾 8 字节 tag）
     Slice query_user_key(internal_key.Data(),
@@ -444,40 +510,38 @@ Status DBImpl::SearchSST(const FileMetaData* file, const Slice& internal_key, st
         std::string* value;
         bool         found;
         bool         is_deletion;
-        Slice        query_user_key; // 用于回调里验证 user_key
+        Slice        query_user_key;
     } result{value, false, false, query_user_key};
 
-    s = table->InternalGet(internal_key, &result, [](void* arg, const Slice& k, const Slice& v) {
-        auto* r = static_cast<SearchResult*>(arg);
+    // Day11: 通过 table_cache_ 查找（命中缓存则无需重开文件）
+    Status s = table_cache_->Get(file, internal_key, &result,
+                                 [](void* arg, const Slice& k, const Slice& v) {
+                                     auto* r = static_cast<SearchResult*>(arg);
 
-        if (k.Size() < 8)
-            return;
+                                     if (k.Size() < 8)
+                                         return;
 
-        // ← 关键：验证 user_key 是否匹配
-        Slice found_user_key(k.Data(), k.Size() - 8);
-        if (found_user_key.Compare(r->query_user_key) != 0) {
-            // Seek 找到了不同 user_key 的记录（目标 key 不存在于此文件）
-            return;
-        }
+                                     // 验证 user_key 是否匹配
+                                     Slice found_user_key(k.Data(), k.Size() - 8);
+                                     if (found_user_key.Compare(r->query_user_key) != 0) {
+                                         return;
+                                     }
 
-        uint64_t tag  = DecodeFixed64(k.Data() + k.Size() - 8);
-        uint8_t  type = tag & 0xFF;
+                                     uint64_t tag  = DecodeFixed64(k.Data() + k.Size() - 8);
+                                     uint8_t  type = tag & 0xFF;
 
-        if (type == static_cast<uint8_t>(kTypeValue)) {
-            r->value->assign(v.Data(), v.Size());
-            r->found       = true;
-            r->is_deletion = false;
-        } else {
-            // kTypeDeletion：tombstone
-            r->found       = true;
-            r->is_deletion = true;
-        }
-    });
+                                     if (type == static_cast<uint8_t>(kTypeValue)) {
+                                         r->value->assign(v.Data(), v.Size());
+                                         r->found       = true;
+                                         r->is_deletion = false;
+                                     } else {
+                                         r->found       = true;
+                                         r->is_deletion = true;
+                                     }
+                                 });
 
-    if (!s.Ok()) {
-        delete table;
+    if (!s.Ok())
         return s;
-    }
 
     if (result.found) {
         *found = true;
@@ -486,7 +550,6 @@ Status DBImpl::SearchSST(const FileMetaData* file, const Slice& internal_key, st
         }
     }
 
-    delete table;
     return s;
 }
 
@@ -829,6 +892,34 @@ Status DBImpl::InstallCompactionResults(Compaction* c) {
     return versions_.LogAndApply(&edit);
 }
 
+// void DBImpl::RemoveObsoleteFiles() {
+//     // 收集所有"活跃"文件号（VersionSet 当前持有的所有 SSTable）
+//     std::set<uint64_t> live;
+//     for (int level = 0; level < kNumLevels; level++) {
+//         for (const auto* f : versions_.GetFiles(level)) {
+//             live.insert(f->number);
+//         }
+//     }
+//     // 保留当前 WAL 和 MANIFEST 文件
+//     live.insert(log_number_);
+//     live.insert(versions_.ManifestFileNumber());
+
+//     // 扫描目录，删除不在 live 集合里的 .ldb 文件
+//     for (const auto& entry : fs::directory_iterator(dbname_)) {
+//         const std::string fname = entry.path().filename().string();
+//         if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".ldb") {
+//             try {
+//                 uint64_t num = std::stoull(fname);
+//                 if (live.find(num) == live.end()) {
+//                     fs::remove(entry.path());
+//                 }
+//             } catch (...) {}
+//         }
+//     }
+// }
+
+// ── RemoveObsoleteFiles ───────────────────────────────────────
+
 void DBImpl::RemoveObsoleteFiles() {
     // 收集所有"活跃"文件号（VersionSet 当前持有的所有 SSTable）
     std::set<uint64_t> live;
@@ -848,6 +939,8 @@ void DBImpl::RemoveObsoleteFiles() {
             try {
                 uint64_t num = std::stoull(fname);
                 if (live.find(num) == live.end()) {
+                    // Day11: 删除文件前先从 TableCache 中淘汰，避免悬空指针
+                    table_cache_->Evict(num);
                     fs::remove(entry.path());
                 }
             } catch (...) {}

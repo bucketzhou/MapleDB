@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:28:00
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-17 15:42:26
+ * @LastEditTime: 2026-09-21 08:12:03
  * @Description: src/table/table.h
  * Table：SSTable 文件在内存中的读取接口
  * 提供 Open（打开文件）/ InternalGet（点查）/ NewIterator（全扫描）
@@ -83,7 +83,8 @@ private:
         Block*            index_block; // Index Block 常驻内存，避免每次查询都重读
         Options           options;
         BlockHandle       metaindex_handle;
-        const Comparator* cmp; // ← 新增：存储传入的比较器
+        const Comparator* cmp;      // ← 新增：存储传入的比较器
+        uint64_t          cache_id; // Day 11 新增：BlockCache 分区 ID（0 表示未启用）
     };
 
     explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}

@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:29:33
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-17 16:23:09
+ * @LastEditTime: 2026-09-21 10:55:55
  * @Description:
  *Table 的实现：Open / ReadBlock / InternalGet / NewIterator
  *修复说明：1. #include "table/block.h" 已包含完整的 Block::Iter 定义，消除"不完整类型"错误。
@@ -10,6 +10,8 @@
  */
 #include "table/table.h"
 
+#include "mapledb/options.h"
+#include "util/cache.h"
 #include "util/coding.h"
 
 #include <cassert>
@@ -113,7 +115,9 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     rep->metaindex_handle = footer.metaindex_handle();
     rep->cmp              = cmp; // ← 保存比较器
 
-    *table = new Table(rep);
+    // Day11: 若启用了 block_cache，申请一个唯一 ID 用于区分不同文件的 Block
+    rep->cache_id = (options.block_cache != nullptr) ? options.block_cache->NewId() : 0;
+    *table        = new Table(rep);
     return Status::OK();
 }
 
@@ -129,9 +133,66 @@ Table::~Table() {
 // ── Table::ReadBlock ──────────────────────────────────────────
 // 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
 
+// Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
+//     *result = nullptr;
+
+//     size_t n   = static_cast<size_t>(handle.size());
+//     char*  buf = new char[n];
+
+//     // 定位到 Block 起始位置并读取 n 字节
+//     fseek(rep_->file, static_cast<long>(handle.offset()), SEEK_SET);
+//     if (fread(buf, 1, n, rep_->file) != n) {
+//         delete[] buf;
+//         return Status::IOError("cannot read data block");
+//     }
+
+//     // 读取并跳过 5 字节物理尾部（type=1B + CRC=4B）
+//     char trailer[5];
+//     if (fread(trailer, 1, 5, rep_->file) != 5) {
+//         delete[] buf;
+//         return Status::IOError("cannot read data block trailer");
+//     }
+//     // 教学版：跳过 CRC 校验，生产代码应在此验证
+
+//     *result = new Block(buf, n, true /* owned */);
+//     return Status::OK();
+// }
+
+// ── Table::ReadBlock ──────────────────────────────────────────
+// 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
+//
+// Day11 新增：若 options_.block_cache != nullptr，先查缓存。
+//   缓存 key   = [cache_id: 8B][block_offset: 8B]
+//   缓存 value = char*（Block 原始字节，由缓存 delete[]）
+//   命中时：从缓存字节构造新 Block（Block 自己 new 一份，拥有所有权）
+//   未命中时：从磁盘读取，同时将原始字节的副本插入缓存
+
 Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     *result = nullptr;
 
+    // ── Day11: 尝试 BlockCache 命中 ───────────────────────
+    Cache* bc = rep_->options.block_cache;
+    if (bc != nullptr && rep_->cache_id != 0) {
+        // 构造 16 字节缓存 key：[cache_id(8B)][offset(8B)]
+        char key_buf[16];
+        EncodeFixed64(key_buf, rep_->cache_id);
+        EncodeFixed64(key_buf + 8, handle.offset());
+        Slice cache_key(key_buf, 16);
+
+        Cache::Handle* ch = bc->Lookup(cache_key);
+        if (ch != nullptr) {
+            // 缓存命中：复制缓存中的原始字节，构造新 Block
+            const char* cached = static_cast<const char*>(bc->Value(ch));
+            size_t      n      = static_cast<size_t>(handle.size());
+            char*       buf    = new char[n];
+            memcpy(buf, cached, n);
+            bc->Release(ch);
+            *result = new Block(buf, n, true /* owned */);
+            return Status::OK();
+        }
+    }
+
+    // ── 磁盘读取 ──────────────────────────────────────────
     size_t n   = static_cast<size_t>(handle.size());
     char*  buf = new char[n];
 
@@ -149,6 +210,22 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         return Status::IOError("cannot read data block trailer");
     }
     // 教学版：跳过 CRC 校验，生产代码应在此验证
+
+    // ── Day11: 将原始字节插入 BlockCache ──────────────────
+    if (bc != nullptr && rep_->cache_id != 0) {
+        char key_buf[16];
+        EncodeFixed64(key_buf, rep_->cache_id);
+        EncodeFixed64(key_buf + 8, handle.offset());
+        Slice cache_key(key_buf, 16);
+
+        // 缓存存储独立副本，由缓存 delete[]
+        char* cached_copy = new char[n];
+        memcpy(cached_copy, buf, n);
+        Cache::Handle* ch = bc->Insert(cache_key, cached_copy, n, [](const Slice&, void* v) {
+            delete[] static_cast<char*>(v);
+        });
+        bc->Release(ch); // 释放 Insert 返回的引用
+    }
 
     *result = new Block(buf, n, true /* owned */);
     return Status::OK();
