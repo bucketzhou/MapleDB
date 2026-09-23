@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-21 07:52:08
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-21 07:57:03
+ * @LastEditTime: 2026-09-21 17:50:58
  * @Description:
  */
 #include "util/cache.h"
@@ -103,9 +103,10 @@ private:
             while (h != nullptr) {
                 LRUHandle* next = h->next_hash;
                 uint32_t   slot = h->hash & (new_length - 1);
-                h->next_hash    = new_list[slot];
-                new_list[slot]  = h;
-                h               = next;
+                // 单链表头插法
+                h->next_hash   = new_list[slot];
+                new_list[slot] = h;
+                h              = next;
                 count++;
             }
         }

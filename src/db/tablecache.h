@@ -2,18 +2,14 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-21 07:55:46
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-21 07:56:17
+ * @LastEditTime: 2026-09-22 11:11:02
  * @Description:
+ * TableCache：缓存打开的 SSTable 文件（Table 对象）功能：
+ * - 以文件号（uint64_t）为 key，缓存 Table* 对象
+ * - 缓存命中时直接返回已打开的 Table，避免重复 fopen / 读 Index Block
+ * - 支持按文件号 Evict（删除旧文件时调用）
+ * 参考 LevelDB table_cache.h
  */
-// src/db/table_cache.h
-// TableCache：缓存打开的 SSTable 文件（Table 对象）
-//
-// 功能：
-//   - 以文件号（uint64_t）为 key，缓存 Table* 对象
-//   - 缓存命中时直接返回已打开的 Table，避免重复 fopen / 读 Index Block
-//   - 支持按文件号 Evict（删除旧文件时调用）
-//
-// 参考 LevelDB table_cache.h
 
 #pragma once
 
