@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-17 11:18:17
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-21 08:01:06
+ * @LastEditTime: 2026-09-27 09:54:20
  * @Description: src/db/db_impl.h
  * DBImpl：DB 接口的核心实现
  * 持有所有子系统（WAL、MemTable、VersionSet），串联读写流程
@@ -25,8 +25,11 @@
     #include "table/table.h"
     #include "table/tablebuilder.h"
 
+    #include <condition_variable>
     #include <cstdint>
+    #include <mutex>
     #include <string>
+    #include <thread>
 
 namespace mapledb {
 class TableCache;
@@ -65,7 +68,7 @@ private:
 
     // 确保 mem_ 有足够空间接收新写入
     // MemTable 满时：切换到新 MemTable，触发同步 Flush
-    Status MakeRoomForWrite();
+    Status MakeRoomForWrite(std::unique_lock<std::mutex>& lock);
 
     // ── Minor Compaction（MemTable Flush）────────────────────
 
@@ -112,8 +115,15 @@ private:
     // 删除磁盘上已不在 VersionSet 中的旧 SSTable 文件
     void RemoveObsoleteFiles();
 
-    // 判断是否需要 Major Compaction，如需要则执行
+    // Day 12：只负责判断并调度（通知后台线程）
+    // 必须在持有 mutex_ 时调用
     void MaybeScheduleCompaction();
+
+    // ── Day 12: 后台 Compaction 线程 ─────────────────────────────
+    void BGWork();               // 后台线程入口（循环等待 + 执行）
+    void BackgroundCompaction(); // Compaction 主体（无锁调用）
+    void ScheduleCompaction();   // 通知后台线程（必须持 mutex_）
+
     // ── 成员变量 ──────────────────────────────────────────────
     const std::string     dbname_;
     const Options         options_;
@@ -128,6 +138,13 @@ private:
     VersionSet versions_; // SSTable 文件管理
 
     TableCache* table_cache_;
+
+    mutable std::mutex      mutex_;         // 保护所有共享状态
+    std::condition_variable bg_cv_;         // 后台线程等待 / 写入者等待
+    bool                    bg_scheduled_;  // 后台 Compaction 是否已调度
+    bool                    shutting_down_; // DB 正在关闭
+    Status                  bg_error_;      // 后台线程遇到的错误
+    std::thread             bg_thread_;     // 后台 Compaction 线程
 };
 
 } // namespace mapledb

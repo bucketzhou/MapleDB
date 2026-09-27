@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-03 16:40:29
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-03 19:34:44
+ * @LastEditTime: 2026-09-27 14:27:42
  * @Description: MemTable：基于 SkipList 的内存键值存储
  *职责：
  * - 接受写操作（Put/Delete），编码成 InternalKey 格式存入 SkipList
@@ -18,6 +18,7 @@
 #include "skiplist.h"
 #include "util/arena.h"
 
+#include <atomic> // 新增
 #include <string>
 
 namespace mapledb {
@@ -37,11 +38,11 @@ public:
     //   2. flush 线程（通过 DBImpl::imm_）引用
     // 引用计数降为 0 时，MemTable 自我销毁
 
-    void Ref() { ++refs_; }
+    void Ref() { refs_.fetch_add(1, std::memory_order_relaxed); }
     void Unref() {
-        --refs_;
-        assert(refs_ >= 0);
-        if (refs_ <= 0)
+        int r = refs_.fetch_sub(1, std::memory_order_acq_rel) - 1;
+        assert(r >= 0);
+        if (r == 0)
             delete this;
     }
 
@@ -73,7 +74,7 @@ private:
     ~MemTable(); // private：通过引用计数自动释放，不允许外部 delete
 
     InternalKeyComparator comparator_;
-    int                   refs_;  // 引用计数（初始为 0，第一次 Ref() 后变为 1）
+    std::atomic<int>      refs_;  // atomic<int> 引用计数（初始为 0，第一次 Ref() 后变为 1）
     Arena                 arena_; // 所有节点内存从这里分配
     Table                 table_; // 底层 SkipList
 };

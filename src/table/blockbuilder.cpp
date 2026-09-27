@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-11 10:50:50
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-11 17:04:18
+ * @LastEditTime: 2026-09-27 15:21:22
  * @Description:
  */
 #include "table/blockbuilder.h"
@@ -30,7 +30,10 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
     assert(!finished_);
     assert(counter_ <= block_restart_interval_);
     // 有序性检查，新key必须大于上一个key
-    assert(last_key_.empty() || Slice(last_key_).Compare(key) < 0);
+    // 注意：此处不做字节序断言，因为 SSTable 使用 InternalKeyComparator 排序：
+    // 同一 user_key 的多个版本按 seq 降序存储，其字节表示不是严格字节升序，
+    // 但在 InternalKeyComparator 下是有序的。
+    // assert(last_key_.empty() || Slice(last_key_).Compare(key) < 0);
     size_t shared = 0;
     if (counter_ < block_restart_interval_) {
         const size_t min_len = std::min(last_key_.size(), key.Size());

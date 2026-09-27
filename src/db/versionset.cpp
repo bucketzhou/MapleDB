@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-16 10:53:53
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-19 12:19:00
+ * @LastEditTime: 2026-09-27 15:19:27
  * @Description:
  * src/db/version_set.cpp
  * 修复要点：
@@ -76,11 +76,16 @@ VersionSet::~VersionSet() {
 void VersionSet::ApplyEdit(const VersionEdit& edit) {
     // 修复1：next_file_number_ 取"当前值"和"edit值+1"的最大值
     // 不做 "edit.value >= current" 的条件判断，直接更新为更大的
+    // Day 12（原子 CAS 更新为更大值）：
     if (edit.has_next_file_number()) {
-        // edit 里存的是"下一个可用文件号"，直接使用（不再 +1）
-        // 但要确保不会缩小
-        if (edit.next_file_number() >= next_file_number_) {
-            next_file_number_ = edit.next_file_number();
+        uint64_t nfn = edit.next_file_number();
+        uint64_t cur = next_file_number_.load(std::memory_order_relaxed);
+        while (nfn > cur) {
+            if (next_file_number_.compare_exchange_weak(cur, nfn, std::memory_order_relaxed,
+                                                        std::memory_order_relaxed)) {
+                break;
+            }
+            // CAS 失败：cur 已被更新，重新比较
         }
     }
     if (edit.has_last_sequence() && edit.last_sequence() >= last_sequence_) {
@@ -123,7 +128,7 @@ Status VersionSet::EnsureManifestOpen() {
         return Status::OK();
 
     // 分配新文件号给 MANIFEST
-    manifest_file_number_     = next_file_number_++;
+    manifest_file_number_     = next_file_number_.fetch_add(1, std::memory_order_relaxed);
     std::string manifest_path = ManifestFileName(dbname_, manifest_file_number_);
 
     // 创建新 MANIFEST（wb，覆盖写）
@@ -139,8 +144,7 @@ Status VersionSet::WriteSnapshot() {
     VersionEdit snapshot;
     snapshot.SetComparatorName(Slice("leveldb.BytewiseComparator"));
     snapshot.SetLogNumber(log_number_);
-    // 修复2：写入的 next_file 就是当前的 next_file_number_（不额外+1）
-    snapshot.SetNextFile(next_file_number_);
+    snapshot.SetNextFile(next_file_number_.load(std::memory_order_relaxed));
     snapshot.SetLastSequence(last_sequence_);
 
     for (int level = 0; level < kNumLevels; level++) {
@@ -160,7 +164,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit) {
     // 修复3：只补全"用户没有设置的字段"，不覆盖用户已设置的值
     // （原代码直接 edit->SetNextFile(next_file_number_) 会覆盖用户传入的值）
     if (!edit->has_next_file_number()) {
-        edit->SetNextFile(next_file_number_);
+        edit->SetNextFile(next_file_number_.load(std::memory_order_relaxed));
     }
     if (!edit->has_last_sequence()) {
         edit->SetLastSequence(last_sequence_);
@@ -230,7 +234,7 @@ Status VersionSet::Recover() {
 
     // 修复4：next_file_number_ 初始值设为 manifest_file_number_+1
     // 后续 ApplyEdit 会根据 edit 里的值继续更新
-    next_file_number_ = manifest_file_number_ + 1;
+    next_file_number_.store(manifest_file_number_ + 1, std::memory_order_relaxed);
 
     std::string manifest_path = dbname_ + "/" + manifest_name;
 
@@ -265,14 +269,18 @@ Status VersionSet::Recover() {
     // ④ 确保 next_file_number_ 不小于所有已知文件号+1
     for (int level = 0; level < kNumLevels; level++) {
         for (const FileMetaData* f : files_[level]) {
-            if (f->number >= next_file_number_) {
-                next_file_number_ = f->number + 1;
+            uint64_t cur = next_file_number_.load(std::memory_order_relaxed);
+            if (f->number + 1 > cur) {
+                next_file_number_.store(f->number + 1, std::memory_order_relaxed);
             }
         }
     }
     // manifest 本身也要算进去
-    if (manifest_file_number_ >= next_file_number_) {
-        next_file_number_ = manifest_file_number_ + 1;
+    {
+        uint64_t cur = next_file_number_.load(std::memory_order_relaxed);
+        if (manifest_file_number_ + 1 > cur) {
+            next_file_number_.store(manifest_file_number_ + 1, std::memory_order_relaxed);
+        }
     }
 
     // ⑤ 修复5：Recover 之后，manifest_writer_ 必须正确指向现有 MANIFEST

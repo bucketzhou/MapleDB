@@ -39,9 +39,24 @@ static constexpr int kTableCacheSize = 100; // 最多缓存 100 个 Table 对象
 DBImpl::DBImpl(const Options& options, const std::string& dbname) :
     dbname_(dbname), options_(options), icmp_(), mem_(nullptr), imm_(nullptr), log_writer_(nullptr),
     log_number_(0), versions_(dbname, options),
-    table_cache_(new TableCache(dbname, options, &icmp_, kTableCacheSize)) {}
-
+    table_cache_(new TableCache(dbname, options, &icmp_, kTableCacheSize)),
+    bg_scheduled_(false),   // Day 12 新增
+    shutting_down_(false) { // Day 12 新增
+                            // bg_thread_ 在 Open() 末尾启动，确保单线程恢复完成
+}
 DBImpl::~DBImpl() {
+    // ① 通知后台线程关闭（在锁内设置标志）
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        shutting_down_ = true;
+        bg_cv_.notify_all();
+    }
+
+    // ② 等待后台线程退出（必须在释放资源前完成）
+    if (bg_thread_.joinable()) {
+        bg_thread_.join();
+    }
+
     delete log_writer_;
     if (mem_)
         mem_->Unref();
@@ -123,7 +138,20 @@ Status DBImpl::Open() {
     // ⑤ 更新 VersionSet 里的 log_number
     VersionEdit log_edit;
     log_edit.SetLogNumber(log_number_);
-    return versions_.LogAndApply(&log_edit);
+    Status s = versions_.LogAndApply(&log_edit);
+    if (!s.Ok())
+        return s;
+
+    // 单线程恢复完成，启动后台线程
+    bg_thread_ = std::thread(&DBImpl::BGWork, this);
+
+    // 如果恢复后有 Compaction 需求，调度后台线程
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        MaybeScheduleCompaction();
+    }
+
+    return Status::OK();
 }
 
 // ── DB::Open 静态工厂方法 ─────────────────────────────────────
@@ -157,12 +185,14 @@ Status DBImpl::Delete(const std::string& key) {
 }
 
 Status DBImpl::Write(WriteBatch* batch) {
-    // ① 确保 MemTable 有空间
-    Status s = MakeRoomForWrite();
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    // ① 等待 mem_ 有空间（可能等待后台 Flush）
+    Status s = MakeRoomForWrite(lock);
     if (!s.Ok())
         return s;
 
-    // ② 分配序列号
+    // ② 分配序列号 （在锁内，原子性由锁保证）
     SequenceNumber seq = versions_.LastSequence() + 1;
     WriteBatchInternal::SetSequence(batch, seq);
     versions_.SetLastSequence(seq + WriteBatchInternal::Count(batch) - 1);
@@ -182,34 +212,38 @@ Status DBImpl::Write(WriteBatch* batch) {
 
 // ── MakeRoomForWrite ──────────────────────────────────────────
 
-Status DBImpl::MakeRoomForWrite() {
-    // MemTable 大小未超过阈值，直接返回
-    if (mem_->ApproximateMemoryUsage() < options_.writer_buffer_size) {
+Status DBImpl::MakeRoomForWrite(std::unique_lock<std::mutex>& lock) {
+    while (true) {
+        if (!bg_error_.Ok())
+            return bg_error_;
+        if (shutting_down_)
+            return Status::IOError("DB is shutting down");
+
+        // mem_ 未满，直接返回
+        if (mem_->ApproximateMemoryUsage() < options_.writer_buffer_size) {
+            return Status::OK();
+        }
+
+        // imm_ 还没被 Flush，等后台线程处理完
+        if (imm_ != nullptr) {
+            bg_cv_.wait(lock); // 释放 mutex_，等待 BGWork 的 notify_all
+            continue;          // 被唤醒后重新检查所有条件
+        }
+
+        // mem_ 已满且 imm_ 为空：轮转
+        imm_ = mem_;
+        mem_ = new MemTable(icmp_);
+        mem_->Ref();
+
+        // 创建新 WAL
+        delete log_writer_;
+        log_number_ = versions_.NewFileNumber();
+        log_writer_ = new log::Writer(LogFileName(log_number_));
+
+        // 通知后台线程开始 Flush
+        ScheduleCompaction();
         return Status::OK();
     }
-
-    // MemTable 已满：
-    // ① 如果还有未完成的 imm_（上次 Flush 失败？），先等其完成
-    //    教学版：简化处理，直接报错
-    if (imm_ != nullptr) {
-        return Status::IOError("imm_ still exists, previous flush not done");
-    }
-
-    // ② 把当前 mem_ 变成 imm_，创建新的可写 mem_
-    imm_ = mem_;
-    // 不 Unref，因为 imm_ 接管了引用
-
-    mem_ = new MemTable(icmp_);
-    mem_->Ref();
-
-    // ③ 创建新的 WAL 文件（新 MemTable 对应新 WAL）
-    delete log_writer_;
-    log_number_ = versions_.NewFileNumber();
-    log_writer_ = new log::Writer(LogFileName(log_number_));
-
-    // ④ 同步 Flush imm_ 到 Level 0（教学版：同步，生产应异步）
-    Status s = CompactMemTable();
-    return s;
 }
 
 // ════════════════════════════════════════════════════════
@@ -271,8 +305,9 @@ Status DBImpl::CompactMemTable() {
         }
     }
 
-    MaybeScheduleCompaction(); // ← Day 10 新增
-
+    // 不在此处调用 MaybeScheduleCompaction()。
+    // 恢复路径在 Open() 末尾统一调度后台线程。
+    // MaybeScheduleCompaction();
     return Status::OK();
 }
 
@@ -343,81 +378,89 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
 // ════════════════════════════════════════════════════════
 
 Status DBImpl::Get(const std::string& key, std::string* value) {
-    // ① 构造 LookupKey（包含 user_key + 最大 sequence，用于在 SkipList 里查）
-    SequenceNumber seq = versions_.LastSequence();
-    LookupKey      lkey(Slice(key), seq);
+    // ① 在锁内快照所有需要的状态
+    SequenceNumber seq;
+    MemTable*      mem;
+    MemTable*      imm;
+    // 按值复制 FileMetaData，避免 SSTable 读期间被 InstallCompactionResults 释放
+    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
 
-    Status s;
-
-    // ② 先查 mem_（最新数据）
-    if (mem_->Get(lkey, value, &s)) {
-        return s; // 找到（包括 found 或 NotFound/tombstone）
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        seq = versions_.LastSequence();
+        mem = mem_;
+        imm = imm_;
+        mem->Ref();
+        if (imm)
+            imm->Ref();
+        for (int level = 0; level < kNumLevels; level++) {
+            for (const FileMetaData* f : versions_.GetFiles(level)) {
+                files_snapshot[level].push_back(*f); // 按值拷贝
+            }
+        }
     }
+    // 锁已释放，后台 Compaction 可以并发运行
 
-    // ③ 再查 imm_（次新数据，如果存在）
-    if (imm_ != nullptr && imm_->Get(lkey, value, &s)) {
+    // ② 构造 LookupKey
+    LookupKey lkey(Slice(key), seq);
+    Status    s;
+
+    // ③ 查 mem_（SkipList 支持多读者并发，无需额外锁）
+    if (mem->Get(lkey, value, &s)) {
+        mem->Unref();
+        if (imm)
+            imm->Unref();
         return s;
     }
 
-    // ④ 按层查 SSTable
-    // 构造 InternalKey 用于 SSTable 内部的 Seek
-    // InternalKey = user_key + (seq << 8 | kTypeValue)
-    // 用 LookupKey 的 internal_key() 部分
+    // ④ 查 imm_
+    if (imm != nullptr && imm->Get(lkey, value, &s)) {
+        mem->Unref();
+        imm->Unref();
+        return s;
+    }
+
+    mem->Unref();
+    if (imm)
+        imm->Unref();
+
+    // ⑤ 按层查 SSTable（使用快照，无锁）
+    // 教学注意：此处读取 SSTable 文件时，后台可能并发删除旧文件。
+    // 生产实现（LevelDB）通过 Version 引用计数解决此问题。
+    // 在教学场景下，table_cache_ 通常持有打开的文件，可规避大部分竞态。
     Slice internal_key = lkey.internal_key();
 
     for (int level = 0; level < kNumLevels; level++) {
-        const auto& files = versions_.GetFiles(level);
-        if (files.empty())
+        auto& fvec = files_snapshot[level];
+        if (fvec.empty())
             continue;
 
         if (level == 0) {
-            // Level 0：文件可能 key 重叠，需要从新到旧逐个检查
-            // （文件编号越大越新）
-            // std::vector<FileMetaData*> sorted_files(files);
-            // std::sort(sorted_files.begin(), sorted_files.end(),
-            //           [](const FileMetaData* a, const FileMetaData* b) {
-            //               return a->number > b->number;  // 降序：新文件优先
-            //           });
-
-            // for (const FileMetaData* f : sorted_files) {
-            //     // 快速 key 范围过滤
-            //     if (key < f->smallest.substr(0, key.size()) ||
-            //         key > f->largest) {
-            //         // 简单过滤：如果 user_key 明显不在范围内，跳过
-            //         // 注意：f->smallest/largest 是 InternalKey 编码的字符串
-            //         // 精确判断需解码，这里做简化处理（不过滤也能正确，只是多读）
-            //     }
-            //     bool found = false;
-            //     s = SearchSST(f, internal_key, value, &found);
-            //     if (!s.Ok()) return s;
-            //     if (found) return s;
-            // }
-
             // Level 0：文件可能 key 重叠，从新到旧逐个检查
-            std::vector<FileMetaData*> sorted_files(files);
-            std::sort(sorted_files.begin(), sorted_files.end(),
-                      [](const FileMetaData* a, const FileMetaData* b) {
-                          return a->number > b->number; // 降序：新文件优先
-                      });
-
-            for (const FileMetaData* f : sorted_files) {
+            std::sort(fvec.begin(), fvec.end(), [](const FileMetaData& a, const FileMetaData& b) {
+                return a.number > b.number; // 降序：新文件优先
+            });
+            for (const FileMetaData& f : fvec) {
                 bool found = false;
-                s          = SearchSST(f, internal_key, value, &found);
+                s          = SearchSST(&f, internal_key, value, &found);
                 if (!s.Ok() && !s.IsNotFound())
                     return s;
                 if (found)
-                    return s; // 找到（包括 tombstone）
+                    return s;
             }
-
         } else {
             // Level 1+：文件有序无重叠，二分定位
-            int idx = VersionSet::FindFile(files, internal_key);
-            if (idx >= static_cast<int>(files.size()))
+            std::vector<FileMetaData*> ptrs;
+            ptrs.reserve(fvec.size());
+            for (auto& f : fvec)
+                ptrs.push_back(&f);
+
+            int idx = VersionSet::FindFile(ptrs, internal_key);
+            if (idx >= static_cast<int>(ptrs.size()))
                 continue;
 
-            const FileMetaData* f     = files[idx];
-            bool                found = false;
-            s                         = SearchSST(f, internal_key, value, &found);
+            bool found = false;
+            s          = SearchSST(ptrs[idx], internal_key, value, &found);
             if (!s.Ok())
                 return s;
             if (found)
@@ -425,7 +468,6 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
         }
     }
 
-    // 所有层都没找到
     return Status::NotFound(Slice(key));
 }
 
@@ -950,29 +992,165 @@ void DBImpl::RemoveObsoleteFiles() {
 
 // ── MaybeScheduleCompaction ───────────────────────────────────
 
+// void DBImpl::MaybeScheduleCompaction() {
+//     int level = 0;
+//     if (!NeedsCompaction(&level))
+//         return;
+
+//     Compaction* c = PickCompaction();
+//     if (c == nullptr)
+//         return;
+
+//     Status s = DoCompactionWork(c);
+//     if (s.Ok()) {
+//         s = InstallCompactionResults(c);
+//     }
+//     if (s.Ok()) {
+//         RemoveObsoleteFiles();
+//     }
+
+//     delete c;
+
+//     // 递归检查：一次 Compaction 完成后可能触发下一层
+//     if (s.Ok()) {
+//         MaybeScheduleCompaction();
+//     }
+// }
+
+void DBImpl::BGWork() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (true) {
+        bg_cv_.wait(lock, [this]() { return bg_scheduled_ || shutting_down_; });
+
+        if (shutting_down_)
+            break;
+
+        bg_scheduled_ = false;
+        lock.unlock();
+        BackgroundCompaction(); // 无锁执行（内部按需获取释放锁）
+        lock.lock();
+        bg_cv_.notify_all(); // 唤醒所有等待 imm_ 清空的写入者
+    }
+}
+
+void DBImpl::ScheduleCompaction() {
+    if (!bg_scheduled_) {
+        bg_scheduled_ = true;
+        bg_cv_.notify_one(); // 唤醒后台线程（只有一个后台线程）
+    }
+}
+
 void DBImpl::MaybeScheduleCompaction() {
+    // 如果已调度、正在关闭、或有错误，跳过
+    if (bg_scheduled_ || shutting_down_ || !bg_error_.Ok())
+        return;
     int level = 0;
-    if (!NeedsCompaction(&level))
+    if (imm_ != nullptr || NeedsCompaction(&level)) {
+        ScheduleCompaction();
+    }
+}
+
+void DBImpl::BackgroundCompaction() {
+    // ════════════════════════════════════════════════════
+    // Phase 1: Minor Compaction（imm_ → Level 0 SSTable）
+    // ════════════════════════════════════════════════════
+    mutex_.lock();
+
+    if (imm_ != nullptr) {
+        // 在锁内预分配文件号，避免与写入者的 NewFileNumber 并发
+        MemTable* imm_to_flush = imm_;
+        imm_to_flush->Ref(); // 持有引用，防止被提前释放
+        uint64_t file_number = versions_.NewFileNumber();
+        mutex_.unlock();
+
+        // ── I/O 阶段（无锁，写入者可并发写 mem_）──────────────
+        VersionEdit edit;
+        std::string smallest_key, largest_key;
+        uint64_t    file_size = 0;
+        Status s = WriteLevel0Table(imm_to_flush, &edit, file_number, &smallest_key, &largest_key,
+                                    &file_size);
+        imm_to_flush->Unref(); // 释放我们持有的引用
+
+        // ── 重新获锁，安装结果 ─────────────────────────────────
+        mutex_.lock();
+        if (s.Ok()) {
+            if (file_size > 0 && !smallest_key.empty()) {
+                edit.AddFile(0, file_number, file_size, smallest_key, largest_key);
+                edit.SetLogNumber(log_number_);
+                s = versions_.LogAndApply(&edit);
+            } else {
+                // imm_ 为空，清理 ghost 文件
+                std::string ghost = TableFileName(file_number);
+                if (fs::exists(ghost))
+                    fs::remove(ghost);
+            }
+        }
+
+        if (s.Ok()) {
+            imm_->Unref();
+            imm_ = nullptr;
+            // 清理已 Flush 的旧 WAL 文件（在锁内快速完成）
+            for (const auto& entry : fs::directory_iterator(dbname_)) {
+                std::string fname = entry.path().filename().string();
+                if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".log") {
+                    try {
+                        uint64_t num = std::stoull(fname);
+                        if (num < log_number_) {
+                            fs::remove(entry.path());
+                        }
+                    } catch (...) {}
+                }
+            }
+        } else {
+            bg_error_ = s;
+        }
+        // notify_all 由 BGWork 在函数返回后统一发送
+    }
+
+    mutex_.unlock();
+
+    if (!bg_error_.Ok())
         return;
 
+    // ════════════════════════════════════════════════════
+    // Phase 2: Major Compaction
+    // ════════════════════════════════════════════════════
+
+    // 在锁内选择需要 Compaction 的文件
+    mutex_.lock();
     Compaction* c = PickCompaction();
+    mutex_.unlock();
+
     if (c == nullptr)
         return;
 
+    // ── I/O 阶段（无锁）────────────────────────────────────────
+    // 多路归并：读输入 SSTable、去重、写输出 SSTable
+    // 注意：DoCompactionWork 内部读 versions_.GetFiles() 是安全的，
+    // 因为只有本后台线程（单线程）调用 InstallCompactionResults 修改 files_。
     Status s = DoCompactionWork(c);
+
+    // ── 重新获锁，安装结果并清理 ───────────────────────────────
+    mutex_.lock();
     if (s.Ok()) {
         s = InstallCompactionResults(c);
     }
     if (s.Ok()) {
         RemoveObsoleteFiles();
     }
+    if (!s.Ok()) {
+        bg_error_ = s;
+    }
+    // 如果还有更多 Compaction 工作，继续调度
+    if (bg_error_.Ok()) {
+        int level = 0;
+        if (imm_ != nullptr || NeedsCompaction(&level)) {
+            bg_scheduled_ = true; // BGWork 循环会立即执行下一轮
+        }
+    }
+    mutex_.unlock();
 
     delete c;
-
-    // 递归检查：一次 Compaction 完成后可能触发下一层
-    if (s.Ok()) {
-        MaybeScheduleCompaction();
-    }
 }
 
 } // namespace mapledb

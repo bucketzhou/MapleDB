@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-16 10:50:24
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-16 10:52:58
+ * @LastEditTime: 2026-09-27 14:29:08
  * @Description:
  * src/db/version_set.h
  * VersionSet：管理所有层级的 SSTable 文件列表
@@ -21,6 +21,7 @@
 #include "mapledb/options.h"
 #include "mapledb/status.h"
 
+#include <atomic> // 新增
 #include <cstdint>
 #include <set>
 #include <string>
@@ -70,7 +71,7 @@ public:
     // ── 全局计数器 ────────────────────────────────────────────
 
     // 分配一个新的文件编号（每次调用递增）
-    uint64_t NewFileNumber() { return next_file_number_++; }
+    uint64_t NewFileNumber() { return next_file_number_.fetch_add(1, std::memory_order_relaxed); }
 
     uint64_t LastSequence() const { return last_sequence_; }
     uint64_t LogNumber() const { return log_number_; }
@@ -121,7 +122,7 @@ private:
     std::vector<FileMetaData*> files_[kNumLevels];
 
     // 全局单调递增的文件编号（每次创建新文件时 +1）
-    uint64_t next_file_number_;
+    std::atomic<uint64_t> next_file_number_; // uint64_t → atomic<uint64_t>
 
     // 最后一次写操作的序列号
     uint64_t last_sequence_;
