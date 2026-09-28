@@ -20,6 +20,21 @@ struct TableAndFile {
     Table* table;
 };
 
+class ErrorIterator final : public Iterator {
+public:
+    explicit ErrorIterator(Status status) : status_(std::move(status)) {}
+    bool Valid() const override { return false; }
+    void SeekToFirst() override {}
+    void Seek(const Slice&) override {}
+    void Next() override {}
+    const Slice& key() const override { return empty_; }
+    const Slice& value() const override { return empty_; }
+    Status status() const override { return status_; }
+private:
+    Status status_;
+    Slice empty_;
+};
+
 // 缓存淘汰时调用：关闭并释放 Table 对象
 static void DeleteEntry(const Slice& /*key*/, void* value) {
     TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
@@ -56,6 +71,12 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Ha
         return Status::OK();
     }
 
+    // 缓存锁只保护单次操作；串行化 miss/open/insert 并二次检查，避免重复打开同一表。
+    std::lock_guard<std::mutex> lock(open_mutex_);
+    *handle = cache_->Lookup(key);
+    if (*handle != nullptr)
+        return Status::OK();
+
     // 缓存未命中：打开 SSTable 文件
     std::string fname = TableFileName(file_number);
     Table*      table = nullptr;
@@ -80,16 +101,17 @@ Table::Iterator* TableCache::NewIterator(const FileMetaData* meta, Table** table
     if (!s.Ok()) {
         if (tableptr)
             *tableptr = nullptr;
-        return nullptr;
+        return new ErrorIterator(s);
     }
 
     Table*           table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     Table::Iterator* iter  = table->NewIterator();
 
-    // 注意：Release 之后，如果容量充足，缓存仍会保留该 Table。
-    // 若容量不足导致 Table 被驱逐，iter 持有的 Table* 会变为悬空指针。
-    // 教学版假设在 iter 使用期间不会触发驱逐（容量足够）。
-    cache_->Release(handle);
+    // 原先立即 Release 会让淘汰释放迭代器依赖的 Table；把引用交给迭代器持有。
+    // 派生类释放 DataBlock 后，cleanup 才允许关闭所属 Table。
+    iter->RegisterCleanup([](void* cache, void* h) {
+        static_cast<Cache*>(cache)->Release(static_cast<Cache::Handle*>(h));
+    }, cache_, handle);
 
     if (tableptr)
         *tableptr = table;

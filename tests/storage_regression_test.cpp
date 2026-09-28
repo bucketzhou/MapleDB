@@ -74,11 +74,44 @@ static void ConcurrentTableReads(const fs::path& root) {
     Check(good.load(), "shared Table concurrent reads returned incorrect bytes");
 }
 
+static void IteratorCacheLifetimeAndComparator(const fs::path& root) {
+    const auto path = root / "tables";
+    fs::create_directories(path);
+    Options opts;
+    opts.block_size = 32;
+    InternalKeyComparator cmp;
+    {
+        TableBuilder builder((path / "000001.ldb").string(), opts);
+        for (uint64_t seq : {300, 200, 100}) {
+            std::string key;
+            AppendInternalKey(&key, Slice("same"), seq, kTypeValue);
+            builder.Add(Slice(key), Slice(std::to_string(seq)));
+        }
+        OK(builder.Finish());
+    }
+    TableCache cache(path.string(), opts, &cmp, 0); // Release 后会立即销毁未持有的条目
+    FileMetaData file;
+    file.number = 1;
+    file.file_size = fs::file_size(path / "000001.ldb");
+    std::unique_ptr<Iterator> it(cache.NewIterator(&file));
+    cache.Evict(1);
+    std::string target;
+    AppendInternalKey(&target, Slice("same"), 250, kTypeValue);
+    it->SeekToFirst();
+    Check(it->Valid(), "iterator lost Table after eviction");
+    Check(it->value().ToString() == "300", "iterator used wrong internal comparator");
+    OK(it->status());
+    file.number = 999;
+    std::unique_ptr<Iterator> missing(cache.NewIterator(&file));
+    Check(!missing->status().Ok(), "missing SSTable error was hidden");
+}
+
 int main() {
     const auto root = fs::temp_directory_path() / ("mapledb-regression-" + std::to_string(getpid()));
     try {
         fs::create_directories(root);
         ConcurrentTableReads(root);
+        IteratorCacheLifetimeAndComparator(root);
         fs::remove_all(root);
         std::cout << "storage regression tests passed\n";
         return 0;

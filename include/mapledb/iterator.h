@@ -15,12 +15,22 @@
 
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
+#include <vector>
 
 namespace mapledb {
 
 class Iterator {
 public:
-    virtual ~Iterator() = default;
+    virtual ~Iterator() {
+        // 派生类已经释放子迭代器，最后再释放它们依赖的 Table 和文件版本引用。
+        for (auto it = cleanups_.rbegin(); it != cleanups_.rend(); ++it)
+            it->function(it->arg1, it->arg2);
+    }
+
+    // 清理回调在派生类析构完成后执行，用于持有缓存句柄和文件版本。
+    void RegisterCleanup(void (*function)(void*, void*), void* arg1, void* arg2) {
+        cleanups_.push_back({function, arg1, arg2});
+    }
 
     // 当前位置是否有效（指向一个真实的 kv）
     virtual bool Valid() const = 0;
@@ -53,6 +63,14 @@ public:
 
 protected:
     Iterator() = default;
+
+private:
+    struct Cleanup {
+        void (*function)(void*, void*);
+        void* arg1;
+        void* arg2;
+    };
+    std::vector<Cleanup> cleanups_;
 };
 
 } // namespace mapledb
