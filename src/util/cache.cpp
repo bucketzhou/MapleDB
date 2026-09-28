@@ -377,7 +377,9 @@ public:
     size_t TotalCharge() const override {
         size_t total = 0;
         for (int i = 0; i < kNumShards; i++) {
-            // 近似值，不加锁（教学环境无并发问题）
+            // 与分片 Insert/Erase/Prune 使用同一把锁，避免统计与写入发生数据竞争。
+            // 逐个读取分片，所以总量仍是近似值，不是所有分片同一时刻的快照。
+            std::lock_guard<std::mutex> lk(mu_[i]);
             total += shard_[i].TotalCharge();
         }
         return total;
