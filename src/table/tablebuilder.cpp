@@ -69,6 +69,8 @@ TableBuilder::~TableBuilder() {
     if (file_ && !closed_) {
         // 析构时如果还没关闭，丢弃（不写 Footer，文件不完整）
         Abandon();
+    } else if (file_) {
+        fclose(file_); // Finish 遇到 I/O/编码错误提前返回时也要释放句柄。
     }
     delete data_block_;
     delete index_block_;
