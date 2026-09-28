@@ -1,0 +1,46 @@
+{
+  "recorded_at": "2026-09-28T13:45:00.421949+08:00",
+  "machine": {
+    "cpu": "Apple M3 Pro",
+    "ram_bytes": 38654705664,
+    "logical_cpus": 12,
+    "architecture": "arm64",
+    "os": "macOS 27.0 (26A428)",
+    "filesystem_mount": "/System/Volumes/Data",
+    "filesystem_device": "/dev/disk3s1"
+  },
+  "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2), arm64-apple-darwin27.0.0",
+  "build": "Release, C++17, -O2 -DNDEBUG, exceptions and RTTI enabled for both libraries",
+  "mapledb_base_commit": "3e56981fda5c849bd78d26356a61ecfd5a68d559",
+  "mapledb_compiled_source_sha256": "509431cf793d9bbc7f683c7471ca476dc0fce84efe7ac94d2fbbb81a512c7804",
+  "source_hash_method": "SHA256 over sorted CMakeLists.txt, benchmarks/compare_benchmark.cpp, include/**/*.h, src/**/*.h and src/**/*.cpp: relative_path + NUL + bytes + NUL",
+  "leveldb_version": "1.23",
+  "leveldb_commit": "99b3c03b3284f5886f9ef9a4ef703d57373e61be",
+  "sizes": [
+    100000,
+    1000000
+  ],
+  "key_bytes": 16,
+  "value_bytes": 100,
+  "rounds": 5,
+  "seed": 42,
+  "cache_bytes": 8388608,
+  "write_buffer_bytes": 4194304,
+  "block_bytes": 4096,
+  "max_sst_target_bytes": 2097152,
+  "block_restart_interval": 16,
+  "compression": false,
+  "bloom_filter": true,
+  "sync_put": false,
+  "threading": "1 foreground thread; each engine retains its background compaction implementation",
+  "read_cache_state": "fresh engine/cache per workload, one full identical workload warmup before measurement; OS cache not cleared",
+  "latency_sample_stride": 257,
+  "command": "python3 benchmarks/run_bloom_comparison.py --output-dir=docs/performance/bloom --sizes=100000,1000000 --rounds=5 --value-bytes=100 --cache-bytes=8388608 --seed=42 --bloom-bits=10",
+  "bloom_configurations_bits_per_key": [
+    0,
+    10
+  ],
+  "configuration_order": "round1 off/on, round2 on/off, alternating through round5",
+  "engine_order": "alternates by actual round and dataset size; 5 MapleDB-first and 5 LevelDB-first pairs per Bloom setting",
+  "db_directories": "unique temporary parent; exact paths and invocations in execution.json"
+}

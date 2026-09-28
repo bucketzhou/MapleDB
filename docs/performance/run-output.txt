@@ -1,0 +1,161 @@
+MapleDB N=100000 round=1 started
+  write_sequential: 268.34 ms, 372664.73 ops/s
+  write_random: 313.25 ms, 319233.46 ops/s
+  get_sequential: 51.59 ms, 1938519.84 ops/s
+  get_random: 129.79 ms, 770447.43 ops/s
+  get_hot: 52.54 ms, 1903441.61 ops/s
+  get_missing: 54.20 ms, 1845175.90 ops/s
+  scan: 9.64 ms, 10374071.38 ops/s
+LevelDB N=100000 round=1 started
+  write_sequential: 235.79 ms, 424110.92 ops/s
+  write_random: 270.77 ms, 369323.84 ops/s
+  get_sequential: 56.96 ms, 1755472.88 ops/s
+  get_random: 84.31 ms, 1186129.98 ops/s
+  get_hot: 74.93 ms, 1334539.61 ops/s
+  get_missing: 57.64 ms, 1734862.40 ops/s
+  scan: 5.83 ms, 17154621.29 ops/s
+LevelDB N=100000 round=2 started
+  write_sequential: 248.72 ms, 402051.27 ops/s
+  write_random: 278.18 ms, 359476.67 ops/s
+  get_sequential: 55.55 ms, 1800146.28 ops/s
+  get_random: 85.34 ms, 1171801.76 ops/s
+  get_hot: 56.92 ms, 1756851.72 ops/s
+  get_missing: 57.11 ms, 1751089.86 ops/s
+  scan: 5.62 ms, 17793331.52 ops/s
+MapleDB N=100000 round=2 started
+  write_sequential: 267.70 ms, 373554.87 ops/s
+  write_random: 292.44 ms, 341950.97 ops/s
+  get_sequential: 52.23 ms, 1914451.18 ops/s
+  get_random: 112.92 ms, 885553.63 ops/s
+  get_hot: 52.94 ms, 1888966.55 ops/s
+  get_missing: 54.52 ms, 1834141.62 ops/s
+  scan: 9.72 ms, 10289918.45 ops/s
+MapleDB N=100000 round=3 started
+  write_sequential: 257.20 ms, 388802.49 ops/s
+  write_random: 284.82 ms, 351097.24 ops/s
+  get_sequential: 52.67 ms, 1898465.33 ops/s
+  get_random: 113.05 ms, 884600.21 ops/s
+  get_hot: 53.36 ms, 1874011.76 ops/s
+  get_missing: 55.25 ms, 1809845.54 ops/s
+  scan: 9.24 ms, 10825048.38 ops/s
+LevelDB N=100000 round=3 started
+  write_sequential: 227.51 ms, 439537.58 ops/s
+  write_random: 282.24 ms, 354306.24 ops/s
+  get_sequential: 57.17 ms, 1749201.03 ops/s
+  get_random: 83.59 ms, 1196290.89 ops/s
+  get_hot: 59.67 ms, 1676008.07 ops/s
+  get_missing: 58.47 ms, 1710176.40 ops/s
+  scan: 5.87 ms, 17031907.41 ops/s
+LevelDB N=100000 round=4 started
+  write_sequential: 244.69 ms, 408682.67 ops/s
+  write_random: 273.75 ms, 365301.31 ops/s
+  get_sequential: 56.65 ms, 1765279.60 ops/s
+  get_random: 82.78 ms, 1207980.53 ops/s
+  get_hot: 59.65 ms, 1676312.45 ops/s
+  get_missing: 59.75 ms, 1673544.46 ops/s
+  scan: 6.07 ms, 16481478.03 ops/s
+MapleDB N=100000 round=4 started
+  write_sequential: 256.48 ms, 389890.34 ops/s
+  write_random: 312.52 ms, 319974.49 ops/s
+  get_sequential: 51.75 ms, 1932283.14 ops/s
+  get_random: 119.59 ms, 836224.11 ops/s
+  get_hot: 53.52 ms, 1868332.38 ops/s
+  get_missing: 54.94 ms, 1820116.37 ops/s
+  scan: 9.23 ms, 10831203.92 ops/s
+MapleDB N=100000 round=5 started
+  write_sequential: 271.32 ms, 368568.03 ops/s
+  write_random: 298.18 ms, 335362.51 ops/s
+  get_sequential: 51.85 ms, 1928727.09 ops/s
+  get_random: 114.33 ms, 874625.69 ops/s
+  get_hot: 53.53 ms, 1867986.31 ops/s
+  get_missing: 55.03 ms, 1817114.94 ops/s
+  scan: 9.15 ms, 10926325.10 ops/s
+LevelDB N=100000 round=5 started
+  write_sequential: 249.70 ms, 400477.64 ops/s
+  write_random: 278.56 ms, 358992.42 ops/s
+  get_sequential: 55.99 ms, 1786154.19 ops/s
+  get_random: 85.01 ms, 1176322.40 ops/s
+  get_hot: 59.05 ms, 1693507.60 ops/s
+  get_missing: 59.02 ms, 1694478.45 ops/s
+  scan: 6.05 ms, 16524601.91 ops/s
+LevelDB N=1000000 round=1 started
+  write_sequential: 2415.93 ms, 413918.76 ops/s
+  write_random: 3862.49 ms, 258900.38 ops/s
+  get_sequential: 629.94 ms, 1587443.32 ops/s
+  get_random: 1292.56 ms, 773658.43 ops/s
+  get_hot: 660.07 ms, 1514984.81 ops/s
+  get_missing: 630.22 ms, 1586757.77 ops/s
+  scan: 60.62 ms, 16495808.85 ops/s
+MapleDB N=1000000 round=1 started
+  write_sequential: 3395.86 ms, 294476.31 ops/s
+  write_random: 5123.27 ms, 195188.00 ops/s
+  get_sequential: 579.78 ms, 1724780.76 ops/s
+  get_random: 2410.97 ms, 414770.80 ops/s
+  get_hot: 629.19 ms, 1589354.29 ops/s
+  get_missing: 621.42 ms, 1609217.49 ops/s
+  scan: 106.39 ms, 9399648.40 ops/s
+MapleDB N=1000000 round=2 started
+  write_sequential: 3372.68 ms, 296500.55 ops/s
+  write_random: 5025.20 ms, 198997.04 ops/s
+  get_sequential: 576.60 ms, 1734290.13 ops/s
+  get_random: 2274.82 ms, 439594.38 ops/s
+  get_hot: 613.78 ms, 1629256.01 ops/s
+  get_missing: 596.72 ms, 1675817.80 ops/s
+  scan: 101.33 ms, 9868469.78 ops/s
+LevelDB N=1000000 round=2 started
+  write_sequential: 2358.11 ms, 424069.09 ops/s
+  write_random: 3775.24 ms, 264883.81 ops/s
+  get_sequential: 632.47 ms, 1581105.16 ops/s
+  get_random: 1292.30 ms, 773815.50 ops/s
+  get_hot: 653.34 ms, 1530597.60 ops/s
+  get_missing: 629.95 ms, 1587427.15 ops/s
+  scan: 60.98 ms, 16398348.69 ops/s
+LevelDB N=1000000 round=3 started
+  write_sequential: 2360.43 ms, 423651.21 ops/s
+  write_random: 3768.39 ms, 265365.44 ops/s
+  get_sequential: 636.54 ms, 1570997.81 ops/s
+  get_random: 1263.59 ms, 791395.11 ops/s
+  get_hot: 653.36 ms, 1530541.97 ops/s
+  get_missing: 627.29 ms, 1594149.26 ops/s
+  scan: 61.12 ms, 16361490.78 ops/s
+MapleDB N=1000000 round=3 started
+  write_sequential: 3435.05 ms, 291116.32 ops/s
+  write_random: 5052.65 ms, 197915.95 ops/s
+  get_sequential: 576.68 ms, 1734069.09 ops/s
+  get_random: 2391.52 ms, 418143.87 ops/s
+  get_hot: 652.93 ms, 1531555.60 ops/s
+  get_missing: 600.20 ms, 1666108.52 ops/s
+  scan: 100.76 ms, 9924088.96 ops/s
+MapleDB N=1000000 round=4 started
+  write_sequential: 3429.37 ms, 291599.16 ops/s
+  write_random: 5151.06 ms, 194134.70 ops/s
+  get_sequential: 579.84 ms, 1724621.25 ops/s
+  get_random: 2265.42 ms, 441419.50 ops/s
+  get_hot: 619.23 ms, 1614907.75 ops/s
+  get_missing: 597.25 ms, 1674350.54 ops/s
+  scan: 101.04 ms, 9897250.02 ops/s
+LevelDB N=1000000 round=4 started
+  write_sequential: 2387.35 ms, 418874.37 ops/s
+  write_random: 3780.39 ms, 264523.12 ops/s
+  get_sequential: 639.53 ms, 1563639.44 ops/s
+  get_random: 1322.86 ms, 755935.06 ops/s
+  get_hot: 651.99 ms, 1533763.31 ops/s
+  get_missing: 630.45 ms, 1586167.35 ops/s
+  scan: 62.40 ms, 16025469.73 ops/s
+LevelDB N=1000000 round=5 started
+  write_sequential: 2408.70 ms, 415161.40 ops/s
+  write_random: 3813.12 ms, 262252.74 ops/s
+  get_sequential: 630.63 ms, 1585710.42 ops/s
+  get_random: 1298.00 ms, 770416.37 ops/s
+  get_hot: 654.23 ms, 1528519.01 ops/s
+  get_missing: 634.44 ms, 1576196.49 ops/s
+  scan: 61.24 ms, 16328607.61 ops/s
+MapleDB N=1000000 round=5 started
+  write_sequential: 3411.99 ms, 293083.72 ops/s
+  write_random: 5099.45 ms, 196099.43 ops/s
+  get_sequential: 587.97 ms, 1700776.93 ops/s
+  get_random: 2390.26 ms, 418364.60 ops/s
+  get_hot: 641.72 ms, 1558320.13 ops/s
+  get_missing: 609.52 ms, 1640622.58 ops/s
+  scan: 108.34 ms, 9229903.04 ops/s
+All point reads, missing reads and full scans validated. CSV: "docs/performance/results.csv"

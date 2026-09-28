@@ -1,0 +1,343 @@
+=== round=1, Bloom=0 bits/key ===
+MapleDB N=100000 round=1 started
+  write_sequential: 259.93 ms, 384723.46 ops/s
+  write_random: 283.38 ms, 352882.43 ops/s
+  get_sequential: 49.97 ms, 2001224.07 ops/s
+  get_random: 125.26 ms, 798356.71 ops/s
+  get_hot: 53.88 ms, 1856016.41 ops/s
+  get_missing: 52.79 ms, 1894393.87 ops/s
+  scan: 9.25 ms, 10812465.99 ops/s
+LevelDB N=100000 round=1 started
+  write_sequential: 278.49 ms, 359077.33 ops/s
+  write_random: 278.74 ms, 358761.39 ops/s
+  get_sequential: 56.46 ms, 1771280.44 ops/s
+  get_random: 85.24 ms, 1173125.46 ops/s
+  get_hot: 60.12 ms, 1663280.06 ops/s
+  get_missing: 59.02 ms, 1694480.86 ops/s
+  scan: 6.22 ms, 16086113.47 ops/s
+LevelDB N=1000000 round=1 started
+  write_sequential: 2479.00 ms, 403389.25 ops/s
+  write_random: 3706.86 ms, 269769.77 ops/s
+  get_sequential: 646.84 ms, 1545978.76 ops/s
+  get_random: 1460.44 ms, 684723.20 ops/s
+  get_hot: 706.34 ms, 1415741.19 ops/s
+  get_missing: 653.26 ms, 1530794.22 ops/s
+  scan: 60.02 ms, 16661101.30 ops/s
+MapleDB N=1000000 round=1 started
+  write_sequential: 3374.82 ms, 296312.43 ops/s
+  write_random: 5258.43 ms, 190170.90 ops/s
+  get_sequential: 572.04 ms, 1748129.63 ops/s
+  get_random: 2283.22 ms, 437977.94 ops/s
+  get_hot: 621.39 ms, 1609289.03 ops/s
+  get_missing: 579.81 ms, 1724695.98 ops/s
+  scan: 96.82 ms, 10328791.25 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-0-round-1.csv"
+=== round=1, Bloom=10 bits/key ===
+MapleDB N=100000 round=1 started
+  write_sequential: 256.82 ms, 389379.99 ops/s
+  write_random: 307.29 ms, 325420.38 ops/s
+  get_sequential: 53.00 ms, 1886660.46 ops/s
+  get_random: 122.76 ms, 814616.67 ops/s
+  get_hot: 56.43 ms, 1772260.14 ops/s
+  get_missing: 33.22 ms, 3010665.28 ops/s
+  scan: 9.48 ms, 10545278.42 ops/s
+LevelDB N=100000 round=1 started
+  write_sequential: 234.49 ms, 426465.07 ops/s
+  write_random: 282.82 ms, 353586.63 ops/s
+  get_sequential: 59.18 ms, 1689735.07 ops/s
+  get_random: 91.30 ms, 1095297.75 ops/s
+  get_hot: 61.27 ms, 1632214.48 ops/s
+  get_missing: 37.65 ms, 2655977.81 ops/s
+  scan: 5.92 ms, 16881435.10 ops/s
+LevelDB N=1000000 round=1 started
+  write_sequential: 2583.88 ms, 387014.79 ops/s
+  write_random: 3767.92 ms, 265398.28 ops/s
+  get_sequential: 663.44 ms, 1507303.64 ops/s
+  get_random: 1953.97 ms, 511777.27 ops/s
+  get_hot: 714.20 ms, 1400162.22 ops/s
+  get_missing: 429.74 ms, 2327007.59 ops/s
+  scan: 62.68 ms, 15954063.02 ops/s
+MapleDB N=1000000 round=1 started
+  write_sequential: 3427.43 ms, 291764.10 ops/s
+  write_random: 5177.62 ms, 193138.85 ops/s
+  get_sequential: 585.02 ms, 1709329.76 ops/s
+  get_random: 2286.07 ms, 437432.57 ops/s
+  get_hot: 641.87 ms, 1557939.48 ops/s
+  get_missing: 391.61 ms, 2553534.31 ops/s
+  scan: 99.64 ms, 10036579.12 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-10-round-1.csv"
+=== round=2, Bloom=10 bits/key ===
+LevelDB N=100000 round=2 started
+  write_sequential: 231.75 ms, 431495.66 ops/s
+  write_random: 286.29 ms, 349295.30 ops/s
+  get_sequential: 58.74 ms, 1702482.65 ops/s
+  get_random: 89.42 ms, 1118269.06 ops/s
+  get_hot: 61.86 ms, 1616683.08 ops/s
+  get_missing: 41.05 ms, 2436315.74 ops/s
+  scan: 6.02 ms, 16606928.78 ops/s
+MapleDB N=100000 round=2 started
+  write_sequential: 271.56 ms, 368242.86 ops/s
+  write_random: 307.38 ms, 325329.06 ops/s
+  get_sequential: 53.98 ms, 1852520.82 ops/s
+  get_random: 117.22 ms, 853118.88 ops/s
+  get_hot: 57.60 ms, 1736182.70 ops/s
+  get_missing: 33.29 ms, 3003563.04 ops/s
+  scan: 9.37 ms, 10670365.73 ops/s
+MapleDB N=1000000 round=2 started
+  write_sequential: 3479.07 ms, 287433.14 ops/s
+  write_random: 5153.78 ms, 194032.19 ops/s
+  get_sequential: 574.20 ms, 1741567.11 ops/s
+  get_random: 2279.51 ms, 438690.60 ops/s
+  get_hot: 634.60 ms, 1575787.71 ops/s
+  get_missing: 395.24 ms, 2530129.89 ops/s
+  scan: 96.55 ms, 10357497.63 ops/s
+LevelDB N=1000000 round=2 started
+  write_sequential: 2372.51 ms, 421494.42 ops/s
+  write_random: 3755.95 ms, 266243.97 ops/s
+  get_sequential: 658.32 ms, 1519022.34 ops/s
+  get_random: 1966.99 ms, 508391.11 ops/s
+  get_hot: 690.76 ms, 1447687.71 ops/s
+  get_missing: 426.36 ms, 2345416.99 ops/s
+  scan: 62.51 ms, 15997525.63 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-10-round-2.csv"
+=== round=2, Bloom=0 bits/key ===
+LevelDB N=100000 round=2 started
+  write_sequential: 240.77 ms, 415329.11 ops/s
+  write_random: 289.38 ms, 345569.47 ops/s
+  get_sequential: 55.87 ms, 1790002.81 ops/s
+  get_random: 85.62 ms, 1168012.80 ops/s
+  get_hot: 59.16 ms, 1690361.08 ops/s
+  get_missing: 57.07 ms, 1752385.08 ops/s
+  scan: 5.94 ms, 16847541.88 ops/s
+MapleDB N=100000 round=2 started
+  write_sequential: 266.49 ms, 375247.37 ops/s
+  write_random: 309.59 ms, 323009.20 ops/s
+  get_sequential: 51.62 ms, 1937121.05 ops/s
+  get_random: 113.83 ms, 878470.23 ops/s
+  get_hot: 54.35 ms, 1839807.92 ops/s
+  get_missing: 53.78 ms, 1859323.58 ops/s
+  scan: 9.19 ms, 10885786.22 ops/s
+MapleDB N=1000000 round=2 started
+  write_sequential: 3495.54 ms, 286078.81 ops/s
+  write_random: 5234.50 ms, 191040.34 ops/s
+  get_sequential: 556.79 ms, 1796023.92 ops/s
+  get_random: 2082.50 ms, 480192.93 ops/s
+  get_hot: 621.07 ms, 1610128.35 ops/s
+  get_missing: 582.71 ms, 1716133.26 ops/s
+  scan: 92.44 ms, 10817559.68 ops/s
+LevelDB N=1000000 round=2 started
+  write_sequential: 2422.79 ms, 412746.85 ops/s
+  write_random: 3799.26 ms, 263209.36 ops/s
+  get_sequential: 625.29 ms, 1599260.29 ops/s
+  get_random: 1207.15 ms, 828395.15 ops/s
+  get_hot: 652.12 ms, 1533450.99 ops/s
+  get_missing: 608.64 ms, 1643016.92 ops/s
+  scan: 60.12 ms, 16632373.76 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-0-round-2.csv"
+=== round=3, Bloom=0 bits/key ===
+MapleDB N=100000 round=3 started
+  write_sequential: 252.23 ms, 396470.75 ops/s
+  write_random: 304.01 ms, 328938.26 ops/s
+  get_sequential: 51.11 ms, 1956572.27 ops/s
+  get_random: 107.20 ms, 932815.88 ops/s
+  get_hot: 55.62 ms, 1797927.90 ops/s
+  get_missing: 54.12 ms, 1847671.77 ops/s
+  scan: 8.73 ms, 11458746.56 ops/s
+LevelDB N=100000 round=3 started
+  write_sequential: 238.17 ms, 419871.83 ops/s
+  write_random: 277.34 ms, 360573.02 ops/s
+  get_sequential: 55.47 ms, 1802860.23 ops/s
+  get_random: 80.36 ms, 1244477.63 ops/s
+  get_hot: 61.15 ms, 1635216.01 ops/s
+  get_missing: 56.67 ms, 1764467.17 ops/s
+  scan: 5.86 ms, 17075773.75 ops/s
+LevelDB N=1000000 round=3 started
+  write_sequential: 2447.35 ms, 408605.39 ops/s
+  write_random: 3994.40 ms, 250350.72 ops/s
+  get_sequential: 626.98 ms, 1594953.36 ops/s
+  get_random: 1208.68 ms, 827347.96 ops/s
+  get_hot: 661.56 ms, 1511588.78 ops/s
+  get_missing: 617.85 ms, 1618516.48 ops/s
+  scan: 60.26 ms, 16594721.63 ops/s
+MapleDB N=1000000 round=3 started
+  write_sequential: 3467.39 ms, 288401.53 ops/s
+  write_random: 5026.29 ms, 198954.06 ops/s
+  get_sequential: 560.89 ms, 1782865.41 ops/s
+  get_random: 1965.80 ms, 508699.49 ops/s
+  get_hot: 609.72 ms, 1640104.04 ops/s
+  get_missing: 593.18 ms, 1685827.86 ops/s
+  scan: 93.56 ms, 10688156.99 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-0-round-3.csv"
+=== round=3, Bloom=10 bits/key ===
+MapleDB N=100000 round=3 started
+  write_sequential: 262.67 ms, 380707.58 ops/s
+  write_random: 295.96 ms, 337880.69 ops/s
+  get_sequential: 51.44 ms, 1944025.03 ops/s
+  get_random: 110.25 ms, 907028.11 ops/s
+  get_hot: 52.82 ms, 1893320.84 ops/s
+  get_missing: 32.67 ms, 3061314.33 ops/s
+  scan: 9.02 ms, 11082225.90 ops/s
+LevelDB N=100000 round=3 started
+  write_sequential: 254.30 ms, 393237.30 ops/s
+  write_random: 276.75 ms, 361342.39 ops/s
+  get_sequential: 59.55 ms, 1679368.06 ops/s
+  get_random: 80.67 ms, 1239677.10 ops/s
+  get_hot: 61.48 ms, 1626644.44 ops/s
+  get_missing: 36.79 ms, 2718151.43 ops/s
+  scan: 6.08 ms, 16455826.39 ops/s
+LevelDB N=1000000 round=3 started
+  write_sequential: 2478.68 ms, 403441.18 ops/s
+  write_random: 3767.33 ms, 265439.73 ops/s
+  get_sequential: 653.00 ms, 1531383.89 ops/s
+  get_random: 1762.19 ms, 567475.89 ops/s
+  get_hot: 697.21 ms, 1434291.60 ops/s
+  get_missing: 421.20 ms, 2374162.46 ops/s
+  scan: 62.84 ms, 15913662.90 ops/s
+MapleDB N=1000000 round=3 started
+  write_sequential: 3434.15 ms, 291192.74 ops/s
+  write_random: 5156.29 ms, 193937.90 ops/s
+  get_sequential: 559.72 ms, 1786611.58 ops/s
+  get_random: 2005.90 ms, 498529.21 ops/s
+  get_hot: 613.35 ms, 1630403.77 ops/s
+  get_missing: 389.87 ms, 2564963.58 ops/s
+  scan: 93.02 ms, 10750371.41 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-10-round-3.csv"
+=== round=4, Bloom=10 bits/key ===
+LevelDB N=100000 round=4 started
+  write_sequential: 228.92 ms, 436832.48 ops/s
+  write_random: 275.83 ms, 362545.82 ops/s
+  get_sequential: 58.45 ms, 1710733.51 ops/s
+  get_random: 83.18 ms, 1202262.05 ops/s
+  get_hot: 61.25 ms, 1632560.89 ops/s
+  get_missing: 38.71 ms, 2583058.77 ops/s
+  scan: 6.07 ms, 16481817.59 ops/s
+MapleDB N=100000 round=4 started
+  write_sequential: 263.07 ms, 380125.58 ops/s
+  write_random: 302.91 ms, 330130.11 ops/s
+  get_sequential: 52.31 ms, 1911783.91 ops/s
+  get_random: 108.66 ms, 920262.34 ops/s
+  get_hot: 55.80 ms, 1792029.08 ops/s
+  get_missing: 34.50 ms, 2898179.76 ops/s
+  scan: 9.39 ms, 10651375.27 ops/s
+MapleDB N=1000000 round=4 started
+  write_sequential: 3465.75 ms, 288537.93 ops/s
+  write_random: 5178.26 ms, 193115.23 ops/s
+  get_sequential: 567.61 ms, 1761777.44 ops/s
+  get_random: 1969.74 ms, 507681.52 ops/s
+  get_hot: 636.81 ms, 1570318.16 ops/s
+  get_missing: 392.17 ms, 2549929.75 ops/s
+  scan: 92.38 ms, 10825434.98 ops/s
+LevelDB N=1000000 round=4 started
+  write_sequential: 2369.84 ms, 421968.90 ops/s
+  write_random: 3777.75 ms, 264708.02 ops/s
+  get_sequential: 666.13 ms, 1501209.32 ops/s
+  get_random: 1858.32 ms, 538121.18 ops/s
+  get_hot: 699.90 ms, 1428778.01 ops/s
+  get_missing: 427.45 ms, 2339461.98 ops/s
+  scan: 61.30 ms, 16312370.94 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-10-round-4.csv"
+=== round=4, Bloom=0 bits/key ===
+LevelDB N=100000 round=4 started
+  write_sequential: 238.53 ms, 419228.40 ops/s
+  write_random: 280.20 ms, 356893.40 ops/s
+  get_sequential: 56.24 ms, 1778121.55 ops/s
+  get_random: 83.11 ms, 1203271.09 ops/s
+  get_hot: 61.96 ms, 1614006.35 ops/s
+  get_missing: 56.80 ms, 1760596.95 ops/s
+  scan: 6.10 ms, 16396579.48 ops/s
+MapleDB N=100000 round=4 started
+  write_sequential: 259.24 ms, 385740.21 ops/s
+  write_random: 288.26 ms, 346911.25 ops/s
+  get_sequential: 51.86 ms, 1928302.51 ops/s
+  get_random: 105.64 ms, 946653.70 ops/s
+  get_hot: 56.16 ms, 1780470.93 ops/s
+  get_missing: 53.96 ms, 1853177.39 ops/s
+  scan: 9.32 ms, 10725778.00 ops/s
+MapleDB N=1000000 round=4 started
+  write_sequential: 3500.92 ms, 285638.83 ops/s
+  write_random: 5123.64 ms, 195173.74 ops/s
+  get_sequential: 564.85 ms, 1770378.77 ops/s
+  get_random: 2080.26 ms, 480708.72 ops/s
+  get_hot: 638.14 ms, 1567065.20 ops/s
+  get_missing: 574.60 ms, 1740339.21 ops/s
+  scan: 94.88 ms, 10539212.46 ops/s
+LevelDB N=1000000 round=4 started
+  write_sequential: 2404.33 ms, 415915.75 ops/s
+  write_random: 3841.40 ms, 260321.92 ops/s
+  get_sequential: 635.25 ms, 1574194.85 ops/s
+  get_random: 1207.92 ms, 827868.08 ops/s
+  get_hot: 685.21 ms, 1459416.19 ops/s
+  get_missing: 610.63 ms, 1637653.92 ops/s
+  scan: 59.76 ms, 16733449.31 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-0-round-4.csv"
+=== round=5, Bloom=0 bits/key ===
+MapleDB N=100000 round=5 started
+  write_sequential: 262.79 ms, 380537.72 ops/s
+  write_random: 289.57 ms, 345342.52 ops/s
+  get_sequential: 50.33 ms, 1986924.41 ops/s
+  get_random: 107.34 ms, 931600.35 ops/s
+  get_hot: 54.21 ms, 1844734.80 ops/s
+  get_missing: 52.94 ms, 1889069.14 ops/s
+  scan: 9.02 ms, 11086320.87 ops/s
+LevelDB N=100000 round=5 started
+  write_sequential: 241.77 ms, 413615.96 ops/s
+  write_random: 436.71 ms, 228982.99 ops/s
+  get_sequential: 72.26 ms, 1383844.43 ops/s
+  get_random: 101.74 ms, 982868.19 ops/s
+  get_hot: 66.10 ms, 1512859.30 ops/s
+  get_missing: 62.08 ms, 1610785.82 ops/s
+  scan: 6.36 ms, 15713595.21 ops/s
+LevelDB N=1000000 round=5 started
+  write_sequential: 2495.39 ms, 400738.48 ops/s
+  write_random: 3869.72 ms, 258416.47 ops/s
+  get_sequential: 715.10 ms, 1398413.15 ops/s
+  get_random: 1370.89 ms, 729451.49 ops/s
+  get_hot: 675.65 ms, 1480051.04 ops/s
+  get_missing: 657.15 ms, 1521730.69 ops/s
+  scan: 61.02 ms, 16387308.40 ops/s
+MapleDB N=1000000 round=5 started
+  write_sequential: 3510.84 ms, 284832.12 ops/s
+  write_random: 5344.09 ms, 187122.55 ops/s
+  get_sequential: 565.43 ms, 1768556.65 ops/s
+  get_random: 2140.61 ms, 467156.81 ops/s
+  get_hot: 614.98 ms, 1626067.49 ops/s
+  get_missing: 590.66 ms, 1693028.41 ops/s
+  scan: 93.15 ms, 10735017.64 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-0-round-5.csv"
+=== round=5, Bloom=10 bits/key ===
+MapleDB N=100000 round=5 started
+  write_sequential: 265.80 ms, 376229.62 ops/s
+  write_random: 298.09 ms, 335470.84 ops/s
+  get_sequential: 53.67 ms, 1863116.81 ops/s
+  get_random: 111.27 ms, 898737.72 ops/s
+  get_hot: 55.94 ms, 1787622.96 ops/s
+  get_missing: 33.78 ms, 2960645.59 ops/s
+  scan: 8.96 ms, 11154645.21 ops/s
+LevelDB N=100000 round=5 started
+  write_sequential: 243.63 ms, 410463.33 ops/s
+  write_random: 280.06 ms, 357072.51 ops/s
+  get_sequential: 58.95 ms, 1696254.55 ops/s
+  get_random: 88.45 ms, 1130627.53 ops/s
+  get_hot: 62.33 ms, 1604328.48 ops/s
+  get_missing: 37.40 ms, 2673475.12 ops/s
+  scan: 6.13 ms, 16315542.59 ops/s
+LevelDB N=1000000 round=5 started
+  write_sequential: 2426.46 ms, 412123.69 ops/s
+  write_random: 3852.53 ms, 259569.59 ops/s
+  get_sequential: 656.43 ms, 1523399.70 ops/s
+  get_random: 1830.90 ms, 546178.01 ops/s
+  get_hot: 703.82 ms, 1420809.92 ops/s
+  get_missing: 418.29 ms, 2390686.36 ops/s
+  scan: 61.93 ms, 16145981.37 ops/s
+MapleDB N=1000000 round=5 started
+  write_sequential: 3459.85 ms, 289030.28 ops/s
+  write_random: 5133.19 ms, 194810.53 ops/s
+  get_sequential: 574.32 ms, 1741190.47 ops/s
+  get_random: 1995.41 ms, 501150.34 ops/s
+  get_hot: 629.73 ms, 1587975.95 ops/s
+  get_missing: 391.51 ms, 2554210.46 ops/s
+  scan: 92.54 ms, 10805665.91 ops/s
+All point reads, missing reads and full scans validated. CSV: "/Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/parts/bloom-10-round-5.csv"
+Validated CSV and wrote /Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/summary-off.md
+Validated CSV and wrote /Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom/summary-on.md
+Completed paired Bloom experiment: /Users/zhou/Desktop/project/DB/MapleDB/docs/performance/bloom
