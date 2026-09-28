@@ -32,9 +32,9 @@ static void TBInitCRC() {
     }
 }
 
-static uint32_t TBCRC32(const char* data, size_t len) {
+static uint32_t TBCRC32(const char* data, size_t len, uint32_t init = 0xFFFFFFFFu) {
     std::call_once(tb_crc_init, TBInitCRC);
-    uint32_t c = 0xFFFFFFFFu;
+    uint32_t c = init;
     for (size_t i = 0; i < len; i++)
         c = tb_crc_table[(c ^ (uint8_t) data[i]) & 0xFF] ^ (c >> 8);
     return c ^ 0xFFFFFFFFu;
@@ -98,17 +98,10 @@ void TableBuilder::WriteBlock(const Slice& block_contents, BlockHandle* handle) 
     char trailer[5];
     trailer[0] = 0; // kNoCompression
 
-    // 追加 4 字节 CRC32（对 block_contents + type 计算）
-    // 先计算 block_contents 的 CRC，再对 type 字节继续计算
+    // 对 data + compression type 连续计算 CRC，避免复制和重复扫描数据块。
     uint32_t crc = TBCRC32(block_contents.Data(), block_contents.Size());
-    // 对 type 字节继续累加 CRC
-    // 注意：这里简化为重新计算整体（教学清晰优先）
-    {
-        // 拼接 block_contents + trailer[0] 一起计算 CRC
-        std::string tmp(block_contents.Data(), block_contents.Size());
-        tmp += trailer[0];
-        crc = TBCRC32(tmp.data(), tmp.size());
-    }
+    // 返回值已取反，恢复工作状态后继续处理 type，保持原有磁盘 CRC 格式。
+    crc = TBCRC32(trailer, 1, crc ^ 0xFFFFFFFFu);
     trailer[1] = static_cast<char>(crc & 0xFF);
     trailer[2] = static_cast<char>((crc >> 8) & 0xFF);
     trailer[3] = static_cast<char>((crc >> 16) & 0xFF);
