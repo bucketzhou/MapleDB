@@ -205,18 +205,18 @@ Status DBImpl::Write(WriteBatch* batch) {
     // ② 分配序列号 （在锁内，原子性由锁保证）
     SequenceNumber seq = versions_.LastSequence() + 1;
     WriteBatchInternal::SetSequence(batch, seq);
-    versions_.SetLastSequence(seq + WriteBatchInternal::Count(batch) - 1);
 
     // ③ 写 WAL（持久化保证：先写日志）
     s = log_writer_->AddRecord(WriteBatchInternal::Contents(batch));
-    if (!s.Ok())
-        return s;
+    if (!s.Ok()) { bg_error_ = s; return s; }
     s = log_writer_->Flush();
-    if (!s.Ok())
-        return s;
+    if (!s.Ok()) { bg_error_ = s; return s; }
 
-    // ④ 写 MemTable（内存操作，快速）
+    // WAL 和 MemTable 都成功后再发布序列号。
+    // WAL 失败后记录 bg_error_，后续写入停止，避免继续追加到状态不确定的日志。
     s = WriteBatchInternal::InsertInto(batch, mem_);
+    if (s.Ok()) versions_.SetLastSequence(seq + WriteBatchInternal::Count(batch) - 1);
+    else bg_error_ = s;
     return s;
 }
 

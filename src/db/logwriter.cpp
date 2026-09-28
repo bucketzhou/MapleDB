@@ -192,9 +192,8 @@ Status Writer::AddRecord(const Slice& slice, bool sync) {
 }
 
 Status Writer::Flush() {
-    if (!dest_)
-        return Status::IOError("WAL file not open");
-    fflush(dest_);
+    if (!dest_) return Status::IOError("WAL file not open");
+    if (fflush(dest_) != 0) return Status::IOError("WAL flush failed");
     return Status::OK();
 }
 
