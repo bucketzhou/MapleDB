@@ -378,96 +378,50 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
 // ════════════════════════════════════════════════════════
 
 Status DBImpl::Get(const std::string& key, std::string* value) {
-    // ① 在锁内快照所有需要的状态
     SequenceNumber seq;
-    MemTable*      mem;
-    MemTable*      imm;
-    // 按值复制 FileMetaData，避免 SSTable 读期间被 InstallCompactionResults 释放
-    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
-
+    MemTable* mem;
+    MemTable* imm;
+    VersionSet::FileSnapshotPtr snapshot;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         seq = versions_.LastSequence();
         mem = mem_;
         imm = imm_;
         mem->Ref();
-        if (imm)
-            imm->Ref();
-        for (int level = 0; level < kNumLevels; level++) {
-            for (const FileMetaData* f : versions_.GetFiles(level)) {
-                files_snapshot[level].push_back(*f); // 按值拷贝
-            }
-        }
+        if (imm) imm->Ref();
+        snapshot = versions_.CurrentFiles();
     }
-    // 锁已释放，后台 Compaction 可以并发运行
-
-    // ② 构造 LookupKey
     LookupKey lkey(Slice(key), seq);
-    Status    s;
-
-    // ③ 查 mem_（SkipList 支持多读者并发，无需额外锁）
-    if (mem->Get(lkey, value, &s)) {
-        mem->Unref();
-        if (imm)
-            imm->Unref();
-        return s;
-    }
-
-    // ④ 查 imm_
-    if (imm != nullptr && imm->Get(lkey, value, &s)) {
-        mem->Unref();
-        imm->Unref();
-        return s;
-    }
-
+    Status s;
+    const bool in_memory = mem->Get(lkey, value, &s) ||
+                           (imm != nullptr && imm->Get(lkey, value, &s));
     mem->Unref();
-    if (imm)
-        imm->Unref();
+    if (imm) imm->Unref();
+    if (in_memory) return s;
 
-    // ⑤ 按层查 SSTable（使用快照，无锁）
-    // 教学注意：此处读取 SSTable 文件时，后台可能并发删除旧文件。
-    // 生产实现（LevelDB）通过 Version 引用计数解决此问题。
-    // 在教学场景下，table_cache_ 通常持有打开的文件，可规避大部分竞态。
-    Slice internal_key = lkey.internal_key();
-
-    for (int level = 0; level < kNumLevels; level++) {
-        auto& fvec = files_snapshot[level];
-        if (fvec.empty())
-            continue;
-
+    const Slice internal_key = lkey.internal_key();
+    for (int level = 0; level < kNumLevels; ++level) {
+        const auto& files = (*snapshot)[level];
         if (level == 0) {
-            // Level 0：文件可能 key 重叠，从新到旧逐个检查
-            std::sort(fvec.begin(), fvec.end(), [](const FileMetaData& a, const FileMetaData& b) {
-                return a.number > b.number; // 降序：新文件优先
-            });
-            for (const FileMetaData& f : fvec) {
+            for (const auto& f : files) {
+                if (Slice(key).Compare(ExtractUserKey(Slice(f.smallest))) < 0 ||
+                    Slice(key).Compare(ExtractUserKey(Slice(f.largest))) > 0) continue;
                 bool found = false;
-                s          = SearchSST(&f, internal_key, value, &found);
-                if (!s.Ok() && !s.IsNotFound())
-                    return s;
-                if (found)
-                    return s;
+                s = SearchSST(&f, internal_key, value, &found);
+                if (found || !s.Ok()) return s;
             }
         } else {
-            // Level 1+：文件有序无重叠，二分定位
-            std::vector<FileMetaData*> ptrs;
-            ptrs.reserve(fvec.size());
-            for (auto& f : fvec)
-                ptrs.push_back(&f);
-
-            int idx = VersionSet::FindFile(ptrs, internal_key);
-            if (idx >= static_cast<int>(ptrs.size()))
-                continue;
-
+            auto it = std::lower_bound(files.begin(), files.end(), internal_key,
+                [this](const FileMetaData& f, const Slice& target) {
+                    return icmp_.Compare(Slice(f.largest), target) < 0;
+                });
+            if (it == files.end() ||
+                Slice(key).Compare(ExtractUserKey(Slice(it->smallest))) < 0) continue;
             bool found = false;
-            s          = SearchSST(ptrs[idx], internal_key, value, &found);
-            if (!s.Ok())
-                return s;
-            if (found)
-                return s;
+            s = SearchSST(&*it, internal_key, value, &found);
+            if (found || !s.Ok()) return s;
         }
     }
-
     return Status::NotFound(Slice(key));
 }
 
@@ -970,6 +924,8 @@ void DBImpl::RemoveObsoleteFiles() {
             live.insert(f->number);
         }
     }
+    versions_.AddLiveFiles(&live);
+
     // 保留当前 WAL 和 MANIFEST 文件
     live.insert(log_number_);
     live.insert(versions_.ManifestFileNumber());
@@ -1165,57 +1121,32 @@ void DBImpl::BackgroundCompaction() {
 //   4. 用 DBIter 包装，实现 tombstone 过滤 + 版本去重 + 快照隔离
 
 Iterator* DBImpl::NewIterator() {
-    // ① 在锁内快照所有需要的状态（与 Get 模式相同）
-    SequenceNumber                         seq;
-    MemTable*                              mem;
-    MemTable*                              imm;
-    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
-
+    SequenceNumber seq;
+    MemTable* mem;
+    MemTable* imm;
+    VersionSet::FileSnapshotPtr snapshot;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         seq = versions_.LastSequence();
         mem = mem_;
         imm = imm_;
         mem->Ref();
-        if (imm)
-            imm->Ref();
-        for (int level = 0; level < kNumLevels; level++) {
-            for (const FileMetaData* f : versions_.GetFiles(level)) {
-                files_snapshot[level].push_back(*f);
-            }
-        }
+        if (imm) imm->Ref();
+        snapshot = versions_.CurrentFiles();
     }
-    // 锁已释放
-
-    // ② 构建各数据源的 Iterator
-    std::vector<Iterator*> list;
-
-    // MemTable（可写 MemTable）
-    list.push_back(new MemTableIterator(mem));
-    mem->Unref(); // 释放在此函数中持有的临时引用
-                  // MemTableIterator 已在构造时 Ref，不会被提前释放
-
-    // imm_（不可变 MemTable，等待 Flush）
-    if (imm != nullptr) {
-        list.push_back(new MemTableIterator(imm));
-        imm->Unref();
-    }
-
-    // 各层 SSTable（通过 TableCache 获取，无需重复打开文件）
-    for (int level = 0; level < kNumLevels; level++) {
-        for (const FileMetaData& f : files_snapshot[level]) {
-            Table::Iterator* it = table_cache_->NewIterator(&f);
-            if (it != nullptr) {
-                list.push_back(it);
-            }
-        }
-    }
-
-    // ③ 多路归并
-    Iterator* merge = new MergingIterator(std::move(list), &icmp_);
-
-    // ④ 用户级迭代器（tombstone 过滤 + 版本去重 + 快照隔离）
-    return new DBIter(merge, seq, icmp_);
+    std::vector<Iterator*> inputs;
+    inputs.push_back(new MemTableIterator(mem));
+    mem->Unref();
+    if (imm) { inputs.push_back(new MemTableIterator(imm)); imm->Unref(); }
+    for (int level = 0; level < kNumLevels; ++level)
+        for (const auto& file : (*snapshot)[level])
+            inputs.push_back(table_cache_->NewIterator(&file));
+    auto* result = new DBIter(new MergingIterator(std::move(inputs), &icmp_), seq, icmp_);
+    result->RegisterCleanup([](void* p, void*) {
+        // 子迭代器销毁后再释放文件快照，避免 GC 提前删除旧 SST。
+        delete static_cast<VersionSet::FileSnapshotPtr*>(p);
+    }, new VersionSet::FileSnapshotPtr(std::move(snapshot)), nullptr);
+    return result;
 }
 
 } // namespace mapledb

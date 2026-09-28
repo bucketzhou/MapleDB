@@ -22,6 +22,8 @@
 #include "mapledb/status.h"
 
 #include <atomic> // 新增
+#include <array>
+#include <memory>
 #include <cstdint>
 #include <set>
 #include <string>
@@ -37,6 +39,11 @@ static constexpr int kNumLevels = 7;
 // ════════════════════════════════════════════════════════
 class VersionSet {
 public:
+    using FileSnapshot = std::array<std::vector<FileMetaData>, kNumLevels>;
+    using FileSnapshotPtr = std::shared_ptr<const FileSnapshot>;
+    // 调用方持 DB mutex；快照存活期间其 SSTable 不会被垃圾回收。
+    FileSnapshotPtr CurrentFiles() const { return current_files_; }
+    void AddLiveFiles(std::set<uint64_t>* live);
     // dbname    : DB 目录路径（MANIFEST 等文件在此目录下）
     // options   : DB 配置
     VersionSet(const std::string& dbname, const Options& options);
@@ -106,6 +113,7 @@ private:
 
     // 将 edit 中的 new_files_ 和 deleted_files_ 应用到 files_
     void ApplyEdit(const VersionEdit& edit);
+    void PublishFiles();
 
     // 确保 MANIFEST 文件已打开（首次调用时创建）
     Status EnsureManifestOpen();
@@ -120,6 +128,8 @@ private:
 
     // 各层的文件列表（每层按 smallest key 排序）
     std::vector<FileMetaData*> files_[kNumLevels];
+    FileSnapshotPtr current_files_;
+    std::vector<std::weak_ptr<const FileSnapshot>> file_snapshots_;
 
     // 全局单调递增的文件编号（每次创建新文件时 +1）
     std::atomic<uint64_t> next_file_number_; // uint64_t → atomic<uint64_t>

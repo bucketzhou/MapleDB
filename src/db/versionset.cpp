@@ -59,6 +59,7 @@ VersionSet::VersionSet(const std::string& dbname, const Options& options) :
     dbname_(dbname), options_(options), next_file_number_(2), last_sequence_(0), log_number_(0),
     manifest_file_number_(0), manifest_writer_(nullptr) {
     fs::create_directories(dbname_);
+    PublishFiles();
 }
 
 VersionSet::~VersionSet() {
@@ -121,6 +122,31 @@ void VersionSet::ApplyEdit(const VersionEdit& edit) {
                 // tag 不是字节序排序，必须按 user key 和 sequence 降序比较 InternalKey。
                 return InternalKeyComparator().Compare(Slice(a->smallest), Slice(b->smallest)) < 0;
             });
+    }
+    PublishFiles();
+}
+
+void VersionSet::PublishFiles() {
+    // 仅在版本变化时复制元数据；Get 获取 shared_ptr，省去每次读取时复制和排序。
+    auto snapshot = std::make_shared<FileSnapshot>();
+    for (int level = 0; level < kNumLevels; ++level)
+        for (const auto* f : files_[level]) (*snapshot)[level].push_back(*f);
+    std::sort((*snapshot)[0].begin(), (*snapshot)[0].end(),
+              [](const FileMetaData& a, const FileMetaData& b) { return a.number > b.number; });
+    current_files_ = snapshot;
+    file_snapshots_.erase(std::remove_if(file_snapshots_.begin(), file_snapshots_.end(),
+        [](const auto& old) { return old.expired(); }), file_snapshots_.end());
+    file_snapshots_.push_back(snapshot);
+}
+
+void VersionSet::AddLiveFiles(std::set<uint64_t>* live) {
+    // 保留仍被读者引用的所有版本，包括迭代器尚未打开的 SST；weak_ptr 不延长版本寿命。
+    for (auto it = file_snapshots_.begin(); it != file_snapshots_.end();) {
+        if (auto snapshot = it->lock()) {
+            for (const auto& level : *snapshot)
+                for (const auto& f : level) live->insert(f.number);
+            ++it;
+        } else it = file_snapshots_.erase(it);
     }
 }
 
