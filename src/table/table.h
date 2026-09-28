@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-12 13:28:00
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-21 08:12:03
+ * @LastEditTime: 2026-09-28 07:56:09
  * @Description: src/table/table.h
  * Table：SSTable 文件在内存中的读取接口
  * 提供 Open（打开文件）/ InternalGet（点查）/ NewIterator（全扫描）
@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "mapledb/iterator.h"
 #include "mapledb/options.h"
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
@@ -53,16 +54,17 @@ public:
 
     // ── Iterator 抽象接口 ─────────────────────────────────────
     // 遍历整个 SSTable 的 kv（两级迭代器：Index Block → DataBlock）
-    struct Iterator {
-        virtual ~Iterator()                            = default;
-        virtual bool         Valid() const             = 0;
-        virtual void         SeekToFirst()             = 0;
-        virtual void         Seek(const Slice& target) = 0;
-        virtual void         Next()                    = 0;
-        virtual const Slice& key() const               = 0;
-        virtual const Slice& value() const             = 0;
-        virtual Status       status() const            = 0;
-    };
+    // struct Iterator {
+    //     virtual ~Iterator()                            = default;
+    //     virtual bool         Valid() const             = 0;
+    //     virtual void         SeekToFirst()             = 0;
+    //     virtual void         Seek(const Slice& target) = 0;
+    //     virtual void         Next()                    = 0;
+    //     virtual const Slice& key() const               = 0;
+    //     virtual const Slice& value() const             = 0;
+    //     virtual Status       status() const            = 0;
+    // };
+    using Iterator = mapledb::Iterator;
 
     // 创建迭代器（调用方负责 delete）
     Iterator* NewIterator();

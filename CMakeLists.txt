@@ -60,4 +60,5 @@ add_mapledb_test(daily_test_09)
 add_mapledb_test(daily_test_10)
 add_mapledb_test(daily_test_11)
 add_mapledb_test(daily_test_12)
+add_mapledb_test(daily_test_13)
 

@@ -2,12 +2,13 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-17 10:54:19
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-17 10:55:40
+ * @LastEditTime: 2026-09-28 07:52:33
  * @Description: DB 对外接口（用户直接使用这个头文件）
  */
 
 #pragma once
 
+#include "mapledb/iterator.h"
 #include "mapledb/options.h"
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
@@ -35,6 +36,12 @@ public:
     // 查询一个 key 对应的 value
     // 找到返回 OK，未找到返回 Status::NotFound
     virtual Status Get(const std::string& key, std::string* value) = 0;
+
+    // 创建全局有序迭代器
+    // 合并 MemTable + imm_ + 所有层 SSTable
+    // 只返回快照可见的最新 kv，过滤 tombstone
+    // 调用方负责 delete 返回值
+    virtual Iterator* NewIterator() = 0;
 
     DB(const DB&)            = delete;
     DB& operator=(const DB&) = delete;

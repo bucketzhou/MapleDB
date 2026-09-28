@@ -1153,4 +1153,69 @@ void DBImpl::BackgroundCompaction() {
     delete c;
 }
 
+// ════════════════════════════════════════════════════════
+// NewIterator — 全局有序迭代器
+// ════════════════════════════════════════════════════════
+
+// NewIterator：创建合并了 MemTable + imm_ + 所有 SSTable 的全局迭代器。
+// 实现步骤：
+//   1. 在锁内快照 sequence、MemTable 指针、FileMetaData（与 Get 相同模式）
+//   2. 为每个数据源创建内部 Iterator
+//   3. 用 MergingIterator 归并所有内部 Iterator
+//   4. 用 DBIter 包装，实现 tombstone 过滤 + 版本去重 + 快照隔离
+
+Iterator* DBImpl::NewIterator() {
+    // ① 在锁内快照所有需要的状态（与 Get 模式相同）
+    SequenceNumber                         seq;
+    MemTable*                              mem;
+    MemTable*                              imm;
+    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
+
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        seq = versions_.LastSequence();
+        mem = mem_;
+        imm = imm_;
+        mem->Ref();
+        if (imm)
+            imm->Ref();
+        for (int level = 0; level < kNumLevels; level++) {
+            for (const FileMetaData* f : versions_.GetFiles(level)) {
+                files_snapshot[level].push_back(*f);
+            }
+        }
+    }
+    // 锁已释放
+
+    // ② 构建各数据源的 Iterator
+    std::vector<Iterator*> list;
+
+    // MemTable（可写 MemTable）
+    list.push_back(new MemTableIterator(mem));
+    mem->Unref(); // 释放在此函数中持有的临时引用
+                  // MemTableIterator 已在构造时 Ref，不会被提前释放
+
+    // imm_（不可变 MemTable，等待 Flush）
+    if (imm != nullptr) {
+        list.push_back(new MemTableIterator(imm));
+        imm->Unref();
+    }
+
+    // 各层 SSTable（通过 TableCache 获取，无需重复打开文件）
+    for (int level = 0; level < kNumLevels; level++) {
+        for (const FileMetaData& f : files_snapshot[level]) {
+            Table::Iterator* it = table_cache_->NewIterator(&f);
+            if (it != nullptr) {
+                list.push_back(it);
+            }
+        }
+    }
+
+    // ③ 多路归并
+    Iterator* merge = new MergingIterator(std::move(list), &icmp_);
+
+    // ④ 用户级迭代器（tombstone 过滤 + 版本去重 + 快照隔离）
+    return new DBIter(merge, seq, icmp_);
+}
+
 } // namespace mapledb

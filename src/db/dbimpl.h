@@ -2,7 +2,7 @@
  * @Author: bucketzhou zhouyangcumt@163.com
  * @Date: 2026-09-17 11:18:17
  * @LastEditors: bucketzhou zhouyangcumt@163.com
- * @LastEditTime: 2026-09-27 09:54:20
+ * @LastEditTime: 2026-09-28 08:53:44
  * @Description: src/db/db_impl.h
  * DBImpl：DB 接口的核心实现
  * 持有所有子系统（WAL、MemTable、VersionSet），串联读写流程
@@ -12,9 +12,12 @@
     #pragma once
 
     #include "db/dbformat.h"
+    #include "db/dbiterator.h"
     #include "db/logreader.h"
     #include "db/logwriter.h"
     #include "db/memtable.h"
+    #include "db/memtableiterator.h"
+    #include "db/mergeiterator.h"
     #include "db/versionedit.h"
     #include "db/versionset.h"
     #include "db/writebatch.h"
@@ -48,6 +51,8 @@ public:
 
     // ── 内部初始化（由 DB::Open 调用）────────────────────────
     Status Open();
+
+    Iterator* NewIterator() override;
 
 private:
     // ── Major Compaction 描述 ────────────────────────────────────
