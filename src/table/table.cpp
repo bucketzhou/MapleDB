@@ -325,7 +325,7 @@ private:
         }
 
         owned_block_ = block;
-        data_iter_   = block->NewIterator(BytewiseComparator());
+        data_iter_   = block->NewIterator(table_->ComparatorForIterator());
     }
 
     // 跳过已遍历完的空 DataBlock，推进到下一个有 entry 的位置
@@ -359,7 +359,7 @@ private:
 // ── Table::NewIterator ────────────────────────────────────────
 
 Table::Iterator* Table::NewIterator() {
-    Block::Iter* index_iter = rep_->index_block->NewIterator(BytewiseComparator());
+    Block::Iter* index_iter = rep_->index_block->NewIterator(rep_->cmp);
     return new TwoLevelIterator(index_iter, this);
 }
 

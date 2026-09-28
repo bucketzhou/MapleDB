@@ -97,9 +97,9 @@ static void IteratorCacheLifetimeAndComparator(const fs::path& root) {
     cache.Evict(1);
     std::string target;
     AppendInternalKey(&target, Slice("same"), 250, kTypeValue);
-    it->SeekToFirst();
+    it->Seek(Slice(target));
     Check(it->Valid(), "iterator lost Table after eviction");
-    Check(it->value().ToString() == "300", "iterator used wrong internal comparator");
+    Check(it->value().ToString() == "200", "iterator used wrong internal comparator");
     OK(it->status());
     file.number = 999;
     std::unique_ptr<Iterator> missing(cache.NewIterator(&file));

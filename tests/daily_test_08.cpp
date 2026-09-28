@@ -122,6 +122,13 @@ void TestVersionEditEmpty() {
 // VersionSet 测试
 // ════════════════════════════════════════════════════════
 
+// VersionSet 的文件边界和 FindFile 查询必须使用实际的 InternalKey 编码。
+static std::string IK(const std::string& user_key) {
+    std::string result;
+    AppendInternalKey(&result, Slice(user_key), 1, kTypeValue);
+    return result;
+}
+
 void TestVersionSetBasicAddFile() {
     std::cout << "[TEST] VersionSet AddFile...\n";
 
@@ -137,8 +144,8 @@ void TestVersionSetBasicAddFile() {
     edit.SetLogNumber(1);
     edit.SetNextFile(10);
     edit.SetLastSequence(100);
-    edit.AddFile(0, 3, 4096, "apple", "cherry");
-    edit.AddFile(0, 4, 4096, "date", "grape");
+    edit.AddFile(0, 3, 4096, IK("apple"), IK("cherry"));
+    edit.AddFile(0, 4, 4096, IK("date"), IK("grape"));
 
     Status s = vs.LogAndApply(&edit);
     CHECK(s.Ok());
@@ -167,8 +174,8 @@ void TestVersionSetDeleteFile() {
         VersionEdit e;
         e.SetLastSequence(10);
         e.SetNextFile(5);
-        e.AddFile(1, 1, 8192, "aaa", "mmm");
-        e.AddFile(1, 2, 8192, "nnn", "zzz");
+        e.AddFile(1, 1, 8192, IK("aaa"), IK("mmm"));
+        e.AddFile(1, 2, 8192, IK("nnn"), IK("zzz"));
         CHECK(vs.LogAndApply(&e).Ok());
     }
     CHECK_EQ(vs.NumFiles(1), 2);
@@ -228,8 +235,8 @@ void TestVersionSetRecover() {
             e.SetLogNumber(1);
             e.SetNextFile(5);
             e.SetLastSequence(100);
-            e.AddFile(0, 3, 4096, "apple", "cherry");
-            e.AddFile(0, 4, 4096, "date", "grape");
+            e.AddFile(0, 3, 4096, IK("apple"), IK("cherry"));
+            e.AddFile(0, 4, 4096, IK("date"), IK("grape"));
             CHECK(vs.LogAndApply(&e).Ok());
         }
         // Edit 2: 从 L0 compact 到 L1（删除 L0 文件，添加 L1 文件）
@@ -240,7 +247,7 @@ void TestVersionSetRecover() {
             e.SetLastSequence(200);
             e.DeleteFile(0, 3);
             e.DeleteFile(0, 4);
-            e.AddFile(1, 5, 8192, "apple", "grape");
+            e.AddFile(1, 5, 8192, IK("apple"), IK("grape"));
             CHECK(vs.LogAndApply(&e).Ok());
         }
 
@@ -265,8 +272,8 @@ void TestVersionSetRecover() {
         CHECK_EQ(vs2.NumFiles(1), 1);
         CHECK_EQ(vs2.GetFiles(1)[0]->number, 5u);
         CHECK_EQ(vs2.GetFiles(1)[0]->file_size, 8192u);
-        CHECK_STR_EQ(vs2.GetFiles(1)[0]->smallest, "apple");
-        CHECK_STR_EQ(vs2.GetFiles(1)[0]->largest, "grape");
+        CHECK_STR_EQ(vs2.GetFiles(1)[0]->smallest, IK("apple"));
+        CHECK_STR_EQ(vs2.GetFiles(1)[0]->largest, IK("grape"));
         CHECK_EQ(vs2.LastSequence(), 200u);
 
         std::cout << "  Recovery: L0=0, L1=1 (file#5) ✓\n";
@@ -293,12 +300,12 @@ void TestVersionSetMultiLevelRecover() {
         e.SetNextFile(20);
         e.SetLastSequence(5000);
         // L0: 1 个文件
-        e.AddFile(0, 10, 1024, "key_0001", "key_0100");
+        e.AddFile(0, 10, 1024, IK("key_0001"), IK("key_0100"));
         // L1: 2 个文件
-        e.AddFile(1, 11, 4096, "key_0101", "key_0200");
-        e.AddFile(1, 12, 4096, "key_0201", "key_0300");
+        e.AddFile(1, 11, 4096, IK("key_0101"), IK("key_0200"));
+        e.AddFile(1, 12, 4096, IK("key_0201"), IK("key_0300"));
         // L2: 1 个文件
-        e.AddFile(2, 13, 8192, "key_0001", "key_0300");
+        e.AddFile(2, 13, 8192, IK("key_0001"), IK("key_0300"));
 
         CHECK(vs.LogAndApply(&e).Ok());
 
@@ -334,8 +341,8 @@ void TestVersionSetFindFile() {
     auto make_file = [&](uint64_t num, const std::string& s, const std::string& l) {
         FileMetaData* f = new FileMetaData();
         f->number       = num;
-        f->smallest     = s;
-        f->largest      = l;
+        f->smallest     = IK(s);
+        f->largest      = IK(l);
         files.push_back(f);
     };
 
@@ -345,11 +352,11 @@ void TestVersionSetFindFile() {
     make_file(4, "jjj", "lll");
 
     // FindFile 找第一个 largest >= key 的文件索引
-    CHECK_EQ(VersionSet::FindFile(files, Slice("aaa")), 0); // 在 file#1 里
-    CHECK_EQ(VersionSet::FindFile(files, Slice("ccc")), 0); // 在 file#1 末尾
-    CHECK_EQ(VersionSet::FindFile(files, Slice("ddd")), 1); // 在 file#2 开头
-    CHECK_EQ(VersionSet::FindFile(files, Slice("eee")), 1); // 在 file#2 里
-    CHECK_EQ(VersionSet::FindFile(files, Slice("zzz")), 4); // 超出所有文件
+    CHECK_EQ(VersionSet::FindFile(files, Slice(IK("aaa"))), 0); // 在 file#1 里
+    CHECK_EQ(VersionSet::FindFile(files, Slice(IK("ccc"))), 0); // 在 file#1 末尾
+    CHECK_EQ(VersionSet::FindFile(files, Slice(IK("ddd"))), 1); // 在 file#2 开头
+    CHECK_EQ(VersionSet::FindFile(files, Slice(IK("eee"))), 1); // 在 file#2 里
+    CHECK_EQ(VersionSet::FindFile(files, Slice(IK("zzz"))), 4); // 超出所有文件
 
     // 清理
     for (FileMetaData* f : files)

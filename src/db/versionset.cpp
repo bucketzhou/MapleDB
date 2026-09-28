@@ -117,7 +117,10 @@ void VersionSet::ApplyEdit(const VersionEdit& edit) {
     for (int level = 0; level < kNumLevels; level++) {
         std::sort(
             files_[level].begin(), files_[level].end(),
-            [](const FileMetaData* a, const FileMetaData* b) { return a->smallest < b->smallest; });
+            [](const FileMetaData* a, const FileMetaData* b) {
+                // tag 不是字节序排序，必须按 user key 和 sequence 降序比较 InternalKey。
+                return InternalKeyComparator().Compare(Slice(a->smallest), Slice(b->smallest)) < 0;
+            });
     }
 }
 

@@ -81,6 +81,7 @@ public:
     Status ReadBlock(const BlockHandle& handle, Block** block,
                      Cache::Handle** cache_handle = nullptr) const;
     void ReleaseBlock(Block* block, Cache::Handle* cache_handle) const;
+    const Comparator* ComparatorForIterator() const { return rep_->cmp; }
 
 private:
     // Table 的内部数据
