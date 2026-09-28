@@ -70,7 +70,12 @@ DBImpl::~DBImpl() {
 // ════════════════════════════════════════════════════════
 
 Status DBImpl::Open() {
-    // ① 确保 DB 目录存在
+    // 创建目录或写元数据前拒绝无效配置，避免留下半初始化的 DB。
+    if (options_.writer_buffer_size == 0 || options_.block_size == 0 ||
+        options_.block_restart_interval == 0 || options_.max_file_size == 0)
+        return Status::InvalidArgument("buffer and block sizes must be positive");
+    if (!fs::exists(dbname_ + "/CURRENT") && !options_.create_if_missing)
+        return Status::IOError("DB does not exist");
     fs::create_directories(dbname_);
 
     // ② 判断是新 DB 还是重启恢复
@@ -134,6 +139,7 @@ Status DBImpl::Open() {
     log_number_          = versions_.NewFileNumber();
     std::string log_path = LogFileName(log_number_);
     log_writer_          = new log::Writer(log_path);
+    if (!log_writer_->IsOpen()) return Status::IOError("cannot create WAL");
 
     // ⑤ 更新 VersionSet 里的 log_number
     VersionEdit log_edit;
@@ -158,12 +164,16 @@ Status DBImpl::Open() {
 
 Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     *dbptr       = nullptr;
-    DBImpl* impl = new DBImpl(options, dbname);
-    Status  s    = impl->Open();
+    std::unique_ptr<DBImpl> impl;
+    Status s;
+    try {
+        impl.reset(new DBImpl(options, dbname));
+        s = impl->Open();
+    } catch (const fs::filesystem_error& e) {
+        return Status::IOError(e.what());
+    }
     if (s.Ok()) {
-        *dbptr = impl;
-    } else {
-        delete impl;
+        *dbptr = impl.release();
     }
     return s;
 }

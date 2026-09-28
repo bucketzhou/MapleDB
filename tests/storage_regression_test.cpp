@@ -106,11 +106,31 @@ static void IteratorCacheLifetimeAndComparator(const fs::path& root) {
     Check(!missing->status().Ok(), "missing SSTable error was hidden");
 }
 
+static void OpenErrors(const fs::path& root) {
+    const auto empty = root / "empty";
+    fs::create_directory(empty);
+    Options opts;
+    opts.create_if_missing = false;
+    DB* db = nullptr;
+    Check(!DB::Open(opts, empty.string(), &db).Ok() && db == nullptr,
+          "create_if_missing=false created a database");
+    opts.create_if_missing = true;
+    opts.block_size = 0;
+    Check(!DB::Open(opts, empty.string(), &db).Ok() && db == nullptr,
+          "zero block size accepted");
+    opts.block_size = 4096;
+    std::ofstream file(root / "not-a-directory");
+    file.close();
+    Check(!DB::Open(opts, (root / "not-a-directory" / "child").string(), &db).Ok() && db == nullptr,
+          "filesystem failure did not return Status");
+}
+
 int main() {
     const auto root = fs::temp_directory_path() / ("mapledb-regression-" + std::to_string(getpid()));
     try {
         fs::create_directories(root);
         ConcurrentTableReads(root);
+        OpenErrors(root);
         IteratorCacheLifetimeAndComparator(root);
         fs::remove_all(root);
         std::cout << "storage regression tests passed\n";

@@ -38,6 +38,7 @@ public:
 
     // 强制将内核缓冲区刷到磁盘（比每次 sync 更灵活）
     Status Flush();
+    bool IsOpen() const { return dest_ != nullptr; }
 
 private:
     // 写一条物理 Record（可能是 FULL / FIRST / MIDDLE / LAST）
