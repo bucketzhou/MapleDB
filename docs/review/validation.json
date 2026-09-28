@@ -1,0 +1,400 @@
+[
+  {
+    "number": 1,
+    "title": "fix(crc): 使用 call_once 消除校验表初始化竞争",
+    "started_at": "2026-09-28T14:15:46.753414+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_05",
+      "daily_test_06"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:15:50.979111+08:00",
+    "commit": "f2e4be96be6dec0c504b64f0d6d1c684cbcb2a0f",
+    "files": [
+      "src/db/logreader.cpp",
+      "src/db/logwriter.cpp",
+      "src/table/table.cpp",
+      "src/table/tablebuilder.cpp"
+    ],
+    "log": "logs/01.txt"
+  },
+  {
+    "number": 2,
+    "title": "fix(cache): 在分片锁内读取缓存容量统计",
+    "started_at": "2026-09-28T14:15:50.982551+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_11"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:15:52.144929+08:00",
+    "commit": "1649ede0e7bfd5a54aee2b79d2be2552b6225c89",
+    "files": [
+      "src/util/cache.cpp"
+    ],
+    "log": "logs/02.txt"
+  },
+  {
+    "number": 3,
+    "title": "perf(table): 连续计算块 CRC 避免复制和重复扫描",
+    "started_at": "2026-09-28T14:15:52.146947+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_06"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:15:53.379681+08:00",
+    "commit": "6d585553e5095fb0a9bff78e793e3e24a1dd3873",
+    "files": [
+      "src/table/tablebuilder.cpp"
+    ],
+    "log": "logs/03.txt"
+  },
+  {
+    "number": 4,
+    "title": "fix(table): 使用 pread 读取共享 SST 并检查块边界",
+    "started_at": "2026-09-28T14:15:53.383732+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_06",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:15:55.390409+08:00",
+    "commit": "5720e3d74d7210f41d9e3348dded0e3f046fcf13",
+    "files": [
+      "CMakeLists.txt",
+      "src/table/table.cpp",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/04.txt"
+  },
+  {
+    "number": 5,
+    "title": "perf(cache): 复用缓存 Block 并由 handle 保护其生命周期",
+    "started_at": "2026-09-28T14:15:55.392975+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_11",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:15:57.671510+08:00",
+    "commit": "58f59daa76b3a3f59d477375b4efbdae8ea9573c",
+    "files": [
+      "src/table/table.cpp",
+      "src/table/table.h"
+    ],
+    "log": "logs/05.txt"
+  },
+  {
+    "number": 6,
+    "title": "fix(iterator): 持有 TableCache handle 直到迭代器销毁",
+    "started_at": "2026-09-28T14:15:57.673555+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_13",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:01.150556+08:00",
+    "commit": "7e5b6a13179703d5ce9660a7f702257319d55d05",
+    "files": [
+      "include/mapledb/iterator.h",
+      "src/db/tablecache.cpp",
+      "src/db/tablecache.h",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/06.txt"
+  },
+  {
+    "number": 7,
+    "title": "fix(comparator): 按 InternalKey 顺序排列文件并查找数据块",
+    "started_at": "2026-09-28T14:16:01.153381+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_08",
+      "daily_test_13",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:04.162508+08:00",
+    "commit": "2b4e89a5ae1ecb89dafbc9ce4d54fc76ae049571",
+    "files": [
+      "src/db/versionset.cpp",
+      "src/table/table.cpp",
+      "src/table/table.h",
+      "tests/daily_test_08.cpp",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/07.txt"
+  },
+  {
+    "number": 8,
+    "title": "fix(version): 由读者持有文件快照并让 GC 保留旧 SST",
+    "started_at": "2026-09-28T14:16:04.164865+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_14",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:08.511597+08:00",
+    "commit": "f1a5e7cf44b38434c0aced0ea3ffafe13adc5799",
+    "files": [
+      "src/db/dbimpl.cpp",
+      "src/db/versionset.cpp",
+      "src/db/versionset.h"
+    ],
+    "log": "logs/08.txt"
+  },
+  {
+    "number": 9,
+    "title": "perf(iterator): L1 及更深层按需打开当前 SST",
+    "started_at": "2026-09-28T14:16:08.512995+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_13",
+      "daily_test_14",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:13.272808+08:00",
+    "commit": "ea3c9fb54281a6d6b18d43304b6b4a0b4fe38d3b",
+    "files": [
+      "src/db/dbimpl.cpp"
+    ],
+    "log": "logs/09.txt"
+  },
+  {
+    "number": 10,
+    "title": "fix(open): 返回无效配置和文件系统初始化错误",
+    "started_at": "2026-09-28T14:16:13.274795+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:15.342096+08:00",
+    "commit": "ba8cab4b1d511580789e567ec394fc9bc471f5ca",
+    "files": [
+      "src/db/dbimpl.cpp",
+      "src/db/logwriter.h",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/10.txt"
+  },
+  {
+    "number": 11,
+    "title": "fix(write): 传播 WAL Flush 错误并延后发布序列号",
+    "started_at": "2026-09-28T14:16:15.343892+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_05",
+      "daily_test_12"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:17.200890+08:00",
+    "commit": "2253c47f0588bf3bf25b9d38d1051011006f1f96",
+    "files": [
+      "src/db/dbimpl.cpp",
+      "src/db/logwriter.cpp"
+    ],
+    "log": "logs/11.txt"
+  },
+  {
+    "number": 12,
+    "title": "fix(recovery): 落盘 WAL 重放尾部并预留已观察文件号",
+    "started_at": "2026-09-28T14:16:17.202953+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_09",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:19.602227+08:00",
+    "commit": "5f5dac2c03212c25e454133b55bd4d90225c3338",
+    "files": [
+      "src/db/dbimpl.cpp",
+      "src/db/logwriter.cpp",
+      "src/db/versionset.cpp",
+      "src/db/versionset.h",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/12.txt"
+  },
+  {
+    "number": 13,
+    "title": "fix(background): 显式等待 Flush 并修正后台状态与唤醒",
+    "started_at": "2026-09-28T14:16:19.603639+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_12",
+      "daily_test_14",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:25.107820+08:00",
+    "commit": "e77b61e1874628f32e5fc89fa1cb4cdf68e1e364",
+    "files": [
+      "include/mapledb/db.h",
+      "src/db/dbimpl.cpp",
+      "src/db/dbimpl.h",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/13.txt"
+  },
+  {
+    "number": 14,
+    "title": "fix(tablebuilder): 关闭 Finish 失败后遗留的文件句柄",
+    "started_at": "2026-09-28T14:16:25.108791+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_06"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:16:26.357260+08:00",
+    "commit": "19bb84dca054fa71f241da521c3a214573fa6490",
+    "files": [
+      "src/table/tablebuilder.cpp"
+    ],
+    "log": "logs/14.txt"
+  },
+  {
+    "number": 15,
+    "title": "fix(durability): 同步 SST 与 MANIFEST 并原子发布 CURRENT",
+    "started_at": "2026-09-28T14:17:01.912753+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "daily_test_09",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:17:05.129816+08:00",
+    "commit": "99a668bc2265f3e5a4f7c0a4fbb3c7e6393d259f",
+    "files": [
+      "src/db/logwriter.cpp",
+      "src/db/logwriter.h",
+      "src/db/versionset.cpp",
+      "src/db/versionset.h",
+      "src/table/tablebuilder.cpp",
+      "src/util/fileutil.h"
+    ],
+    "log": "logs/15.txt"
+  },
+  {
+    "number": 16,
+    "title": "feat(bloom): 将 user key 过滤器接入 SST 落盘压缩和点查",
+    "started_at": "2026-09-28T14:17:05.134404+08:00",
+    "build": "Debug passed",
+    "tests": [
+      "bloom_integration_test",
+      "storage_regression_test"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:17:09.486525+08:00",
+    "commit": "60f79074b3532d415ff983f7d5cf9d19bcedbc18",
+    "files": [
+      "CMakeLists.txt",
+      "include/mapledb/options.h",
+      "src/db/dbimpl.cpp",
+      "src/table/filter_block.cpp",
+      "src/table/filter_block.h",
+      "src/table/table.cpp",
+      "src/table/table.h",
+      "src/table/tablebuilder.cpp",
+      "src/table/tablebuilder.h",
+      "src/util/bloom.cpp",
+      "tests/bloom_integration_test.cpp",
+      "tests/storage_regression_test.cpp"
+    ],
+    "log": "logs/16.txt"
+  },
+  {
+    "number": 17,
+    "title": "fix(benchmark): Release 保留测试操作并修正计时与刷盘",
+    "started_at": "2026-09-28T14:17:09.488142+08:00",
+    "build": "Debug passed",
+    "tests": [],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:17:11.994438+08:00",
+    "commit": "7f51d0d048fcc604f27ef9c08d6f310dc4fc64ba",
+    "files": [
+      "CMakeLists.txt",
+      "tests/benchmark.cpp"
+    ],
+    "log": "logs/17.txt"
+  },
+  {
+    "number": 18,
+    "title": "feat(benchmark): 增加与 LevelDB 同数据同请求的开关对照",
+    "started_at": "2026-09-28T14:17:11.996435+08:00",
+    "build": "Release + LevelDB passed",
+    "tests": [
+      "Debug 16/16",
+      "Release 16/16",
+      "paired Bloom smoke 0/10, 1000/2000 keys, 2 rounds",
+      "original benchmark"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:18:35.464560+08:00",
+    "commit": "d1a6eccef4a19b3b8d5c90d589058b4920abb700",
+    "files": [
+      "CMakeLists.txt",
+      "benchmarks/compare_benchmark.cpp",
+      "benchmarks/run_bloom_comparison.py",
+      "benchmarks/run_comparison.sh",
+      "benchmarks/summarize.py",
+      "benchmarks/summarize_bloom.py"
+    ],
+    "log": "logs/18.txt"
+  },
+  {
+    "number": 19,
+    "title": "docs: 记录架构修复验证及 Bloom 与 LevelDB 性能对比",
+    "started_at": "2026-09-28T14:18:35.470337+08:00",
+    "tests": [
+      "local links exist",
+      "280 CSV rows validated"
+    ],
+    "status": "passed",
+    "completed_at": "2026-09-28T14:18:35.827812+08:00",
+    "commit": "5d16812c69c503747154beaa6e4d74ccea19e1b0",
+    "files": [
+      "README.md",
+      "docs/bloom-filter.md",
+      "docs/performance/bloom/comparison.md",
+      "docs/performance/bloom/effects.md",
+      "docs/performance/bloom/environment.json",
+      "docs/performance/bloom/execution.json",
+      "docs/performance/bloom/parts/bloom-0-round-1.csv",
+      "docs/performance/bloom/parts/bloom-0-round-2.csv",
+      "docs/performance/bloom/parts/bloom-0-round-3.csv",
+      "docs/performance/bloom/parts/bloom-0-round-4.csv",
+      "docs/performance/bloom/parts/bloom-0-round-5.csv",
+      "docs/performance/bloom/parts/bloom-10-round-1.csv",
+      "docs/performance/bloom/parts/bloom-10-round-2.csv",
+      "docs/performance/bloom/parts/bloom-10-round-3.csv",
+      "docs/performance/bloom/parts/bloom-10-round-4.csv",
+      "docs/performance/bloom/parts/bloom-10-round-5.csv",
+      "docs/performance/bloom/results-off.csv",
+      "docs/performance/bloom/results-on.csv",
+      "docs/performance/bloom/run-output.txt",
+      "docs/performance/bloom/summary-off.md",
+      "docs/performance/bloom/summary-on.md",
+      "docs/performance/comparison.md",
+      "docs/performance/environment.json",
+      "docs/performance/results.csv",
+      "docs/performance/run-output.txt",
+      "docs/performance/summary.md",
+      "docs/performance/tests-debug.txt",
+      "docs/performance/tests-release.txt",
+      "docs/performance/tests-sanitizer.txt",
+      "docs/resume.md",
+      "tests/benchmark.cpp",
+      "tests/daily_test_08.cpp"
+    ],
+    "log": "logs/19.txt"
+  }
+]

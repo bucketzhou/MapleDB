@@ -1,0 +1,46 @@
+$ cmake -S /private/tmp/mapledb-local-review-20260928/verify-source -B /private/tmp/mapledb-local-review-20260928/verify-debug -DCMAKE_BUILD_TYPE=Debug
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /private/tmp/mapledb-local-review-20260928/verify-debug
+$ cmake --build /private/tmp/mapledb-local-review-20260928/verify-debug -j4
+[  1%] Building CXX object CMakeFiles/mapledb.dir/src/util/cache.cpp.o
+[  3%] Linking CXX static library libmapledb.a
+[ 42%] Built target mapledb
+[ 50%] Linking CXX executable daily_test_04
+[ 50%] Linking CXX executable daily_test_01
+[ 50%] Linking CXX executable daily_test_02
+[ 50%] Linking CXX executable daily_test_03
+[ 55%] Built target daily_test_02
+[ 55%] Built target daily_test_03
+[ 55%] Built target daily_test_01
+[ 57%] Built target daily_test_04
+[ 65%] Linking CXX executable daily_test_05
+[ 65%] Linking CXX executable daily_test_06
+[ 65%] Linking CXX executable daily_test_07
+[ 65%] Linking CXX executable daily_test_08
+[ 71%] Built target daily_test_06
+[ 71%] Built target daily_test_08
+[ 71%] Built target daily_test_05
+[ 73%] Built target daily_test_07
+[ 80%] Linking CXX executable daily_test_12
+[ 80%] Linking CXX executable daily_test_11
+[ 80%] Linking CXX executable daily_test_10
+[ 80%] Linking CXX executable daily_test_09
+[ 88%] Built target daily_test_11
+[ 88%] Built target daily_test_09
+[ 88%] Built target daily_test_12
+[ 88%] Built target daily_test_10
+[ 94%] Linking CXX executable daily_test_13
+[ 94%] Linking CXX executable daily_test_14
+[ 94%] Linking CXX executable benchmark
+[100%] Built target daily_test_13
+[100%] Built target benchmark
+[100%] Built target daily_test_14
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-debug --output-on-failure -R ^(daily_test_11)$
+Test project /private/tmp/mapledb-local-review-20260928/verify-debug
+    Start 11: daily_test_11
+1/1 Test #11: daily_test_11 ....................   Passed    0.33 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.33 sec

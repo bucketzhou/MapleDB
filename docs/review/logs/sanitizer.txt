@@ -1,0 +1,61 @@
+$ cmake -S /tmp/mapledb-local-review-20260928/verify-source -B /tmp/mapledb-local-review-20260928/verify-asan -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined
+-- The CXX compiler identification is AppleClang 21.0.0.21000334
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/mapledb-local-review-20260928/verify-asan
+$ cmake --build /tmp/mapledb-local-review-20260928/verify-asan --target storage_regression_test bloom_integration_test -j4
+[ 16%] Building CXX object CMakeFiles/mapledb.dir/src/db/logreader.cpp.o
+[ 16%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbimpl.cpp.o
+[ 16%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbiterator.cpp.o
+[ 16%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbformat.cpp.o
+[ 20%] Building CXX object CMakeFiles/mapledb.dir/src/db/logwriter.cpp.o
+[ 24%] Building CXX object CMakeFiles/mapledb.dir/src/db/memtable.cpp.o
+In file included from /tmp/mapledb-local-review-20260928/verify-source/src/db/dbiterator.cpp:9:
+/tmp/mapledb-local-review-20260928/verify-source/src/db/dbiterator.h:68:34: warning: private field 'icmp_' is not used [-Wunused-private-field]
+   68 |     const InternalKeyComparator& icmp_;
+      |                                  ^
+1 warning generated.
+[ 28%] Building CXX object CMakeFiles/mapledb.dir/src/db/memtableiterator.cpp.o
+[ 32%] Building CXX object CMakeFiles/mapledb.dir/src/db/mergeiterator.cpp.o
+[ 36%] Building CXX object CMakeFiles/mapledb.dir/src/db/tablecache.cpp.o
+[ 40%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionedit.cpp.o
+[ 44%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionset.cpp.o
+[ 48%] Building CXX object CMakeFiles/mapledb.dir/src/db/writebatch.cpp.o
+[ 52%] Building CXX object CMakeFiles/mapledb.dir/src/table/block.cpp.o
+[ 56%] Building CXX object CMakeFiles/mapledb.dir/src/table/blockbuilder.cpp.o
+[ 60%] Building CXX object CMakeFiles/mapledb.dir/src/table/filter_block.cpp.o
+[ 64%] Building CXX object CMakeFiles/mapledb.dir/src/table/table.cpp.o
+[ 68%] Building CXX object CMakeFiles/mapledb.dir/src/table/tablebuilder.cpp.o
+[ 72%] Building CXX object CMakeFiles/mapledb.dir/src/util/arena.cpp.o
+[ 76%] Building CXX object CMakeFiles/mapledb.dir/src/util/bloom.cpp.o
+[ 80%] Building CXX object CMakeFiles/mapledb.dir/src/util/cache.cpp.o
+[ 84%] Building CXX object CMakeFiles/mapledb.dir/src/util/coding.cpp.o
+[ 88%] Building CXX object CMakeFiles/mapledb.dir/src/util/status.cpp.o
+[ 92%] Linking CXX static library libmapledb.a
+[ 92%] Built target mapledb
+[ 96%] Building CXX object CMakeFiles/storage_regression_test.dir/tests/storage_regression_test.cpp.o
+[100%] Linking CXX executable storage_regression_test
+[100%] Built target storage_regression_test
+[ 92%] Built target mapledb
+[ 96%] Building CXX object CMakeFiles/bloom_integration_test.dir/tests/bloom_integration_test.cpp.o
+[100%] Linking CXX executable bloom_integration_test
+[100%] Built target bloom_integration_test
+$ ctest --test-dir /tmp/mapledb-local-review-20260928/verify-asan --output-on-failure -R ^(storage_regression_test|bloom_integration_test)$
+Test project /tmp/mapledb-local-review-20260928/verify-asan
+    Start 15: storage_regression_test
+1/2 Test #15: storage_regression_test ..........   Passed    1.49 sec
+    Start 16: bloom_integration_test
+2/2 Test #16: bloom_integration_test ...........   Passed    0.86 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =   2.35 sec
+ASan/UBSan storage and Bloom regression tests passed

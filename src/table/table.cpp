@@ -139,6 +139,7 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
 }
 
 void Table::ReadFilter() {
+    // 过滤器是可选加速结构；旧文件、未知格式或校验失败时忽略它，继续正常块查找。
     if (rep_->options.bloom_bits_per_key <= 0 ||
         !FilterKeyModeForComparator(rep_->cmp, &rep_->filter_key_mode)) return;
     size_t size = 0;
@@ -158,6 +159,7 @@ void Table::ReadFilter() {
     if (!s.Ok() || !encoding.Empty()) return;
     s = ReadRawBlock(rep_->file, rep_->file_size, handle, &raw, &size, true);
     if (!s.Ok()) return;
+    // Reader 借用 Slice 的字节；先转存到 Table 的常驻字符串，不能引用局部 raw 缓冲。
     rep_->filter_data.assign(raw.get(), size);
     rep_->filter.reset(new FilterBlockReader(Slice(rep_->filter_data)));
 }

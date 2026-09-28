@@ -1,0 +1,60 @@
+$ cmake -S /private/tmp/mapledb-local-review-20260928/verify-source -B /private/tmp/mapledb-local-review-20260928/verify-debug -DCMAKE_BUILD_TYPE=Debug
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /private/tmp/mapledb-local-review-20260928/verify-debug
+$ cmake --build /private/tmp/mapledb-local-review-20260928/verify-debug -j4
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionset.cpp.o
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbimpl.cpp.o
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/logwriter.cpp.o
+[  7%] Linking CXX static library libmapledb.a
+[ 40%] Built target mapledb
+[ 48%] Linking CXX executable daily_test_04
+[ 48%] Linking CXX executable daily_test_02
+[ 48%] Linking CXX executable daily_test_01
+[ 48%] Linking CXX executable daily_test_03
+[ 51%] Built target daily_test_01
+[ 51%] Built target daily_test_02
+[ 53%] Built target daily_test_03
+[ 55%] Built target daily_test_04
+[ 62%] Building CXX object CMakeFiles/daily_test_08.dir/tests/daily_test_08.cpp.o
+[ 62%] Building CXX object CMakeFiles/daily_test_05.dir/tests/daily_test_05.cpp.o
+[ 62%] Linking CXX executable daily_test_06
+[ 62%] Linking CXX executable daily_test_07
+[ 66%] Built target daily_test_06
+[ 66%] Built target daily_test_07
+[ 70%] Linking CXX executable daily_test_10
+[ 70%] Linking CXX executable daily_test_09
+[ 74%] Built target daily_test_09
+[ 74%] Built target daily_test_10
+[ 77%] Linking CXX executable daily_test_11
+[ 77%] Linking CXX executable daily_test_12
+[ 81%] Built target daily_test_11
+[ 81%] Built target daily_test_12
+[ 85%] Linking CXX executable daily_test_13
+[ 85%] Linking CXX executable daily_test_14
+[ 88%] Built target daily_test_13
+[ 88%] Built target daily_test_14
+[ 92%] Building CXX object CMakeFiles/storage_regression_test.dir/tests/storage_regression_test.cpp.o
+[ 92%] Linking CXX executable benchmark
+[ 94%] Linking CXX executable daily_test_05
+[ 96%] Built target benchmark
+[ 98%] Linking CXX executable daily_test_08
+[ 98%] Built target daily_test_05
+[ 98%] Built target daily_test_08
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/storage_regression_test.cpp:31:28: warning: unused function 'Open' [-Wunused-function]
+   31 | static std::unique_ptr<DB> Open(const fs::path& path, const Options& opts) {
+      |                            ^~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/storage_regression_test.cpp:36:13: warning: unused function 'CheckGet' [-Wunused-function]
+   36 | static void CheckGet(DB* db, int key, const std::string& value) {
+      |             ^~~~~~~~
+2 warnings generated.
+[100%] Linking CXX executable storage_regression_test
+[100%] Built target storage_regression_test
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-debug --output-on-failure -R ^(storage_regression_test)$
+Test project /private/tmp/mapledb-local-review-20260928/verify-debug
+    Start 15: storage_regression_test
+1/1 Test #15: storage_regression_test ..........   Passed    0.40 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.40 sec

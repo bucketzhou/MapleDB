@@ -1,0 +1,553 @@
+$ cmake -S /private/tmp/mapledb-local-review-20260928/verify-source -B /private/tmp/mapledb-local-review-20260928/verify-release -DCMAKE_BUILD_TYPE=Release -DMAPLEDB_LEVELDB_SOURCE_DIR=/tmp/mapledb-leveldb-compare-20260928
+-- The CXX compiler identification is AppleClang 21.0.0.21000334
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+CMake Warning (deprecated) at /tmp/mapledb-leveldb-compare-20260928/CMakeLists.txt:5 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- The C compiler identification is AppleClang 21.0.0.21000334
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Looking for unistd.h
+-- Looking for unistd.h - found
+-- Looking for crc32c_value in crc32c
+-- Looking for crc32c_value in crc32c - not found
+-- Looking for snappy_compress in snappy
+-- Looking for snappy_compress in snappy - not found
+-- Looking for malloc in tcmalloc
+-- Looking for malloc in tcmalloc - not found
+-- Looking for fdatasync
+-- Looking for fdatasync - not found
+-- Looking for F_FULLFSYNC
+-- Looking for F_FULLFSYNC - found
+-- Looking for O_CLOEXEC
+-- Looking for O_CLOEXEC - found
+-- Performing Test HAVE_CLANG_THREAD_SAFETY
+-- Performing Test HAVE_CLANG_THREAD_SAFETY - Success
+-- Performing Test LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS
+-- Performing Test LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS - Success
+-- Performing Test HAVE_CXX17_HAS_INCLUDE
+-- Performing Test HAVE_CXX17_HAS_INCLUDE - Success
+-- Configuring done (1.7s)
+-- Generating done (0.0s)
+-- Build files have been written to: /private/tmp/mapledb-local-review-20260928/verify-release
+$ cmake --build /private/tmp/mapledb-local-review-20260928/verify-release -j4
+[  4%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/c.cc.o
+[  4%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbformat.cpp.o
+[  4%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbimpl.cpp.o
+[  4%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/builder.cc.o
+[  5%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/db_impl.cc.o
+[  6%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbiterator.cpp.o
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/db/logreader.cpp.o
+[  8%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/db_iter.cc.o
+[  9%] Building CXX object CMakeFiles/mapledb.dir/src/db/logwriter.cpp.o
+[ 10%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/dbformat.cc.o
+[ 11%] Building CXX object CMakeFiles/mapledb.dir/src/db/memtable.cpp.o
+[ 12%] Building CXX object CMakeFiles/mapledb.dir/src/db/memtableiterator.cpp.o
+[ 13%] Building CXX object CMakeFiles/mapledb.dir/src/db/mergeiterator.cpp.o
+[ 14%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/dumpfile.cc.o
+[ 15%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/filename.cc.o
+[ 16%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/log_reader.cc.o
+[ 17%] Building CXX object CMakeFiles/mapledb.dir/src/db/tablecache.cpp.o
+[ 18%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionedit.cpp.o
+[ 19%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionset.cpp.o
+[ 20%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/log_writer.cc.o
+[ 21%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/memtable.cc.o
+[ 22%] Building CXX object CMakeFiles/mapledb.dir/src/db/writebatch.cpp.o
+[ 23%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/repair.cc.o
+[ 24%] Building CXX object CMakeFiles/mapledb.dir/src/table/block.cpp.o
+[ 25%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/table_cache.cc.o
+[ 26%] Building CXX object CMakeFiles/mapledb.dir/src/table/blockbuilder.cpp.o
+[ 27%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/version_edit.cc.o
+[ 28%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/version_set.cc.o
+[ 29%] Building CXX object CMakeFiles/mapledb.dir/src/table/filter_block.cpp.o
+[ 30%] Building CXX object CMakeFiles/mapledb.dir/src/table/table.cpp.o
+[ 31%] Building CXX object CMakeFiles/mapledb.dir/src/table/tablebuilder.cpp.o
+[ 32%] Building CXX object CMakeFiles/mapledb.dir/src/util/arena.cpp.o
+[ 33%] Building CXX object leveldb/CMakeFiles/leveldb.dir/db/write_batch.cc.o
+[ 34%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/block_builder.cc.o
+[ 35%] Building CXX object CMakeFiles/mapledb.dir/src/util/bloom.cpp.o
+[ 36%] Building CXX object CMakeFiles/mapledb.dir/src/util/cache.cpp.o
+[ 37%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/block.cc.o
+[ 39%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/filter_block.cc.o
+[ 39%] Building CXX object CMakeFiles/mapledb.dir/src/util/coding.cpp.o
+[ 40%] Building CXX object CMakeFiles/mapledb.dir/src/util/status.cpp.o
+[ 41%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/format.cc.o
+[ 42%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/iterator.cc.o
+[ 43%] Linking CXX static library libmapledb.a
+[ 43%] Built target mapledb
+[ 44%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/merger.cc.o
+[ 45%] Building CXX object CMakeFiles/daily_test_01.dir/tests/daily_test_01.cpp.o
+[ 46%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/table_builder.cc.o
+[ 47%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/table.cc.o
+[ 48%] Building CXX object CMakeFiles/daily_test_02.dir/tests/daily_test_02.cpp.o
+[ 49%] Linking CXX executable daily_test_01
+[ 51%] Building CXX object CMakeFiles/daily_test_03.dir/tests/daily_test_03.cpp.o
+[ 51%] Building CXX object leveldb/CMakeFiles/leveldb.dir/table/two_level_iterator.cc.o
+[ 51%] Built target daily_test_01
+[ 52%] Building CXX object CMakeFiles/daily_test_04.dir/tests/daily_test_04.cpp.o
+[ 53%] Linking CXX executable daily_test_02
+[ 54%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/arena.cc.o
+[ 54%] Built target daily_test_02
+[ 55%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/bloom.cc.o
+[ 56%] Linking CXX executable daily_test_04
+[ 57%] Building CXX object CMakeFiles/daily_test_05.dir/tests/daily_test_05.cpp.o
+[ 57%] Built target daily_test_04
+[ 58%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/cache.cc.o
+[ 59%] Building CXX object CMakeFiles/daily_test_06.dir/tests/daily_test_06.cpp.o
+[ 60%] Linking CXX executable daily_test_03
+[ 60%] Built target daily_test_03
+[ 61%] Building CXX object CMakeFiles/daily_test_07.dir/tests/daily_test_07.cpp.o
+[ 62%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/coding.cc.o
+[ 63%] Linking CXX executable daily_test_06
+[ 64%] Linking CXX executable daily_test_05
+[ 64%] Built target daily_test_06
+[ 65%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/comparator.cc.o
+[ 66%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/crc32c.cc.o
+[ 66%] Built target daily_test_05
+[ 67%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/env.cc.o
+[ 68%] Linking CXX executable daily_test_07
+[ 68%] Built target daily_test_07
+[ 69%] Building CXX object CMakeFiles/daily_test_08.dir/tests/daily_test_08.cpp.o
+[ 70%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/filter_policy.cc.o
+[ 71%] Building CXX object CMakeFiles/daily_test_09.dir/tests/daily_test_09.cpp.o
+[ 72%] Building CXX object CMakeFiles/daily_test_10.dir/tests/daily_test_10.cpp.o
+[ 73%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/hash.cc.o
+[ 74%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/logging.cc.o
+[ 75%] Linking CXX executable daily_test_09
+[ 75%] Built target daily_test_09
+[ 76%] Building CXX object CMakeFiles/daily_test_11.dir/tests/daily_test_11.cpp.o
+[ 77%] Linking CXX executable daily_test_08
+[ 78%] Linking CXX executable daily_test_10
+[ 78%] Built target daily_test_08
+[ 78%] Built target daily_test_10
+[ 79%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/options.cc.o
+[ 80%] Building CXX object CMakeFiles/daily_test_12.dir/tests/daily_test_12.cpp.o
+[ 81%] Building CXX object CMakeFiles/daily_test_13.dir/tests/daily_test_13.cpp.o
+[ 82%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/status.cc.o
+[ 83%] Linking CXX executable daily_test_11
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:95:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   95 |     db->Put("b", "B");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:96:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   96 |     db->Put("a", "A");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:97:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   97 |     db->Put("c", "C");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:128:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  128 |         db->Put(k, v);
+      |         ^~~~~~~ ~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:160:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  160 |     db->Put("apple", "1");
+      |     ^~~~~~~ ~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:161:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  161 |     db->Put("cherry", "3");
+      |     ^~~~~~~ ~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:162:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  162 |     db->Put("grape", "5");
+      |     ^~~~~~~ ~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:189:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  189 |     db->Put("x", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:190:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  190 |     db->Put("y", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:191:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  191 |     db->Put("z", "3");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:192:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  192 |     db->Delete("y"); // tombstone
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:216:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  216 |     db->Put("k", "v1");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:217:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  217 |     db->Put("k", "v2");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:218:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  218 |     db->Put("k", "v3"); // 最新版本
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:261:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  261 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:262:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  262 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:263:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  263 |     db->Delete("a");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:264:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  264 |     db->Put("c", "3");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:265:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  265 |     db->Put("a", "4"); // 重新写入 "a"
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:266:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  266 |     db->Delete("b");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:301:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  301 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:339:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  339 |         db->Put(k, k);
+      |         ^~~~~~~ ~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:371:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  371 |     db->Put("10", "ten");
+      |     ^~~~~~~ ~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:372:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  372 |     db->Put("20", "twenty");
+      |     ^~~~~~~ ~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:373:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  373 |     db->Put("30", "thirty");
+      |     ^~~~~~~ ~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:407:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  407 |     db->Put("k", "old");
+      |     ^~~~~~~ ~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:408:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  408 |     db->Delete("k");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:409:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  409 |     db->Put("k", "new");
+      |     ^~~~~~~ ~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:432:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  432 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:433:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  433 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:434:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  434 |     db->Put("c", "3");
+      |     ^~~~~~~ ~~~~~~~~
+[ 83%] Built target daily_test_11
+[ 84%] Building CXX object leveldb/CMakeFiles/leveldb.dir/util/env_posix.cc.o
+[ 85%] Building CXX object CMakeFiles/daily_test_14.dir/tests/daily_test_14.cpp.o
+[ 86%] Linking CXX executable daily_test_12
+[ 86%] Built target daily_test_12
+[ 87%] Building CXX object leveldb/CMakeFiles/leveldb.dir/helpers/memenv/memenv.cc.o
+31 warnings generated.
+[ 88%] Linking CXX executable daily_test_13
+[ 88%] Built target daily_test_13
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:130:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  130 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:131:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  131 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:132:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  132 |     db->Delete("a");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:156:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  156 |     db->Put("k", "v1");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:157:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  157 |     db->Put("k", "v2");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:158:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  158 |     db->Put("k", "v3");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:165:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  165 |     db->Delete("k");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:166:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  166 |     db->Put("k", "v4");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:216:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  216 |         db->Put("rec_a", "recovered_a");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:217:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  217 |         db->Put("rec_b", "recovered_b");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:218:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  218 |         db->Put("rec_c", "recovered_c");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:251:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  251 |         db->Put("x", "1");
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:252:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  252 |         db->Put("y", "2");
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:253:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  253 |         db->Delete("x");
+      |         ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:284:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  284 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:322:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  322 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:360:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  360 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:448:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  448 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:506:13: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  506 |             db->Put(key, val);
+      |             ^~~~~~~ ~~~~~~~~
+[ 89%] Building CXX object CMakeFiles/storage_regression_test.dir/tests/storage_regression_test.cpp.o
+[ 90%] Building CXX object CMakeFiles/bloom_integration_test.dir/tests/bloom_integration_test.cpp.o
+19 warnings generated.
+[ 91%] Linking CXX static library libleveldb.a
+[ 92%] Linking CXX executable daily_test_14
+[ 92%] Built target daily_test_14
+[ 92%] Built target leveldb
+[ 93%] Building CXX object CMakeFiles/benchmark.dir/tests/benchmark.cpp.o
+[ 94%] Building CXX object CMakeFiles/compare_benchmark.dir/benchmarks/compare_benchmark.cpp.o
+[ 95%] Linking CXX executable storage_regression_test
+[ 95%] Built target storage_regression_test
+[ 96%] Building CXX object leveldb/CMakeFiles/leveldbutil.dir/db/leveldbutil.cc.o
+[ 97%] Linking CXX executable benchmark
+[ 97%] Built target benchmark
+[ 98%] Linking CXX executable bloom_integration_test
+[ 99%] Linking CXX executable leveldbutil
+[ 99%] Built target bloom_integration_test
+[ 99%] Built target leveldbutil
+[100%] Linking CXX executable compare_benchmark
+[100%] Built target compare_benchmark
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-debug --output-on-failure -j4
+Test project /private/tmp/mapledb-local-review-20260928/verify-debug
+      Start 14: daily_test_14
+      Start 16: bloom_integration_test
+      Start  8: daily_test_08
+      Start  9: daily_test_09
+ 1/16 Test  #8: daily_test_08 ....................   Passed    0.63 sec
+      Start 13: daily_test_13
+ 2/16 Test  #9: daily_test_09 ....................   Passed    1.12 sec
+      Start 12: daily_test_12
+ 3/16 Test #16: bloom_integration_test ...........   Passed    1.55 sec
+      Start  5: daily_test_05
+ 4/16 Test  #5: daily_test_05 ....................   Passed    0.45 sec
+      Start 11: daily_test_11
+ 5/16 Test #12: daily_test_12 ....................   Passed    1.50 sec
+      Start 15: storage_regression_test
+ 6/16 Test #11: daily_test_11 ....................   Passed    0.85 sec
+      Start  6: daily_test_06
+ 7/16 Test  #6: daily_test_06 ....................   Passed    0.36 sec
+      Start  1: daily_test_01
+ 8/16 Test  #1: daily_test_01 ....................   Passed    0.46 sec
+      Start  2: daily_test_02
+ 9/16 Test  #2: daily_test_02 ....................   Passed    0.32 sec
+      Start  3: daily_test_03
+10/16 Test  #3: daily_test_03 ....................   Passed    0.34 sec
+      Start  4: daily_test_04
+11/16 Test  #4: daily_test_04 ....................   Passed    0.35 sec
+      Start  7: daily_test_07
+12/16 Test  #7: daily_test_07 ....................   Passed    0.33 sec
+      Start 10: daily_test_10
+13/16 Test #13: daily_test_13 ....................   Passed    5.66 sec
+14/16 Test #15: storage_regression_test ..........   Passed    5.37 sec
+15/16 Test #14: daily_test_14 ....................   Passed   31.42 sec
+16/16 Test #10: daily_test_10 ....................   Passed   30.23 sec
+
+100% tests passed out of 16
+
+Total Test time (real) =  35.29 sec
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-release --output-on-failure -j4
+Test project /private/tmp/mapledb-local-review-20260928/verify-release
+      Start  1: daily_test_01
+      Start  2: daily_test_02
+      Start  3: daily_test_03
+      Start  4: daily_test_04
+ 1/16 Test  #4: daily_test_04 ....................   Passed    0.46 sec
+      Start  5: daily_test_05
+ 2/16 Test  #2: daily_test_02 ....................   Passed    0.46 sec
+      Start  6: daily_test_06
+ 3/16 Test  #1: daily_test_01 ....................   Passed    0.47 sec
+      Start  7: daily_test_07
+ 4/16 Test  #3: daily_test_03 ....................   Passed    0.47 sec
+      Start  8: daily_test_08
+ 5/16 Test  #6: daily_test_06 ....................   Passed    0.30 sec
+      Start  9: daily_test_09
+ 6/16 Test  #7: daily_test_07 ....................   Passed    0.30 sec
+      Start 10: daily_test_10
+ 7/16 Test  #5: daily_test_05 ....................   Passed    0.32 sec
+      Start 11: daily_test_11
+ 8/16 Test  #8: daily_test_08 ....................   Passed    0.45 sec
+      Start 12: daily_test_12
+ 9/16 Test #11: daily_test_11 ....................   Passed    0.58 sec
+      Start 13: daily_test_13
+10/16 Test  #9: daily_test_09 ....................   Passed    1.00 sec
+      Start 14: daily_test_14
+11/16 Test #12: daily_test_12 ....................   Passed    1.05 sec
+      Start 15: storage_regression_test
+12/16 Test #13: daily_test_13 ....................   Passed    7.13 sec
+      Start 16: bloom_integration_test
+13/16 Test #15: storage_regression_test ..........   Passed    7.19 sec
+14/16 Test #16: bloom_integration_test ...........   Passed    1.48 sec
+15/16 Test #14: daily_test_14 ....................   Passed   31.55 sec
+16/16 Test #10: daily_test_10 ....................   Passed   33.81 sec
+
+100% tests passed out of 16
+
+Total Test time (real) =  34.58 sec
+$ python3 /private/tmp/mapledb-local-review-20260928/verify-source/benchmarks/run_bloom_comparison.py --binary=/private/tmp/mapledb-local-review-20260928/verify-release/compare_benchmark --output-dir=/private/tmp/mapledb-local-review-20260928/smoke-results --sizes=1000,2000 --rounds=2
+=== round=1, Bloom=0 bits/key ===
+MapleDB N=1000 round=1 started
+  write_sequential: 10.26 ms, 97481.72 ops/s
+  write_random: 8.80 ms, 113658.97 ops/s
+  get_sequential: 0.83 ms, 1201923.08 ops/s
+  get_random: 0.80 ms, 1247013.40 ops/s
+  get_hot: 0.65 ms, 1546092.10 ops/s
+  get_missing: 0.88 ms, 1134751.77 ops/s
+  scan: 0.11 ms, 9520001.52 ops/s
+LevelDB N=1000 round=1 started
+  write_sequential: 5.87 ms, 170328.73 ops/s
+  write_random: 6.11 ms, 163611.47 ops/s
+  get_sequential: 1.38 ms, 724659.21 ops/s
+  get_random: 1.44 ms, 696843.72 ops/s
+  get_hot: 1.18 ms, 845726.04 ops/s
+  get_missing: 1.33 ms, 750750.75 ops/s
+  scan: 0.17 ms, 5889593.68 ops/s
+LevelDB N=2000 round=1 started
+  write_sequential: 9.10 ms, 219755.06 ops/s
+  write_random: 8.83 ms, 226543.31 ops/s
+  get_sequential: 2.11 ms, 949235.82 ops/s
+  get_random: 2.17 ms, 921181.42 ops/s
+  get_hot: 1.90 ms, 1051617.05 ops/s
+  get_missing: 2.00 ms, 1002255.07 ops/s
+  scan: 0.21 ms, 9518143.96 ops/s
+MapleDB N=2000 round=1 started
+  write_sequential: 9.19 ms, 217700.89 ops/s
+  write_random: 9.54 ms, 209668.33 ops/s
+  get_sequential: 1.40 ms, 1428997.07 ops/s
+  get_random: 1.44 ms, 1387764.22 ops/s
+  get_hot: 1.36 ms, 1471941.12 ops/s
+  get_missing: 1.43 ms, 1401951.38 ops/s
+  scan: 0.17 ms, 11813907.33 ops/s
+All point reads, missing reads and full scans validated. CSV: "/private/tmp/mapledb-local-review-20260928/smoke-results/parts/bloom-0-round-1.csv"
+=== round=1, Bloom=10 bits/key ===
+MapleDB N=1000 round=1 started
+  write_sequential: 3.35 ms, 298125.59 ops/s
+  write_random: 3.73 ms, 267890.03 ops/s
+  get_sequential: 0.71 ms, 1412345.60 ops/s
+  get_random: 0.74 ms, 1349223.59 ops/s
+  get_hot: 0.57 ms, 1767174.73 ops/s
+  get_missing: 0.41 ms, 2462296.09 ops/s
+  scan: 0.09 ms, 10568031.70 ops/s
+LevelDB N=1000 round=1 started
+  write_sequential: 3.74 ms, 267624.12 ops/s
+  write_random: 4.24 ms, 235953.40 ops/s
+  get_sequential: 0.98 ms, 1024547.12 ops/s
+  get_random: 1.01 ms, 985990.07 ops/s
+  get_hot: 0.79 ms, 1269639.74 ops/s
+  get_missing: 0.57 ms, 1764963.36 ops/s
+  scan: 0.12 ms, 8318913.88 ops/s
+LevelDB N=2000 round=1 started
+  write_sequential: 8.84 ms, 226339.31 ops/s
+  write_random: 8.64 ms, 231545.13 ops/s
+  get_sequential: 1.96 ms, 1017855.22 ops/s
+  get_random: 1.84 ms, 1086218.60 ops/s
+  get_hot: 1.68 ms, 1189031.66 ops/s
+  get_missing: 1.12 ms, 1788508.83 ops/s
+  scan: 0.22 ms, 9296920.40 ops/s
+MapleDB N=2000 round=1 started
+  write_sequential: 9.31 ms, 214844.90 ops/s
+  write_random: 8.47 ms, 236189.11 ops/s
+  get_sequential: 1.48 ms, 1355893.59 ops/s
+  get_random: 1.41 ms, 1414843.41 ops/s
+  get_hot: 1.48 ms, 1350172.69 ops/s
+  get_missing: 0.89 ms, 2239433.51 ops/s
+  scan: 0.19 ms, 10671390.54 ops/s
+All point reads, missing reads and full scans validated. CSV: "/private/tmp/mapledb-local-review-20260928/smoke-results/parts/bloom-10-round-1.csv"
+=== round=2, Bloom=10 bits/key ===
+LevelDB N=1000 round=2 started
+  write_sequential: 3.15 ms, 317502.35 ops/s
+  write_random: 3.68 ms, 271511.67 ops/s
+  get_sequential: 0.88 ms, 1139276.56 ops/s
+  get_random: 1.00 ms, 998253.06 ops/s
+  get_hot: 0.80 ms, 1243459.40 ops/s
+  get_missing: 0.55 ms, 1822462.95 ops/s
+  scan: 0.12 ms, 8221993.83 ops/s
+MapleDB N=1000 round=2 started
+  write_sequential: 5.05 ms, 198054.12 ops/s
+  write_random: 6.64 ms, 150555.18 ops/s
+  get_sequential: 0.83 ms, 1210836.99 ops/s
+  get_random: 0.87 ms, 1154734.41 ops/s
+  get_hot: 0.71 ms, 1409030.19 ops/s
+  get_missing: 0.49 ms, 2055849.20 ops/s
+  scan: 0.11 ms, 9230797.63 ops/s
+MapleDB N=2000 round=2 started
+  write_sequential: 8.74 ms, 228858.04 ops/s
+  write_random: 8.47 ms, 236164.70 ops/s
+  get_sequential: 1.50 ms, 1337382.93 ops/s
+  get_random: 1.64 ms, 1219140.51 ops/s
+  get_hot: 1.44 ms, 1391304.35 ops/s
+  get_missing: 0.84 ms, 2381661.21 ops/s
+  scan: 0.19 ms, 10685644.37 ops/s
+LevelDB N=2000 round=2 started
+  write_sequential: 7.17 ms, 279032.45 ops/s
+  write_random: 7.97 ms, 250841.35 ops/s
+  get_sequential: 1.78 ms, 1124701.25 ops/s
+  get_random: 1.93 ms, 1035554.20 ops/s
+  get_hot: 1.62 ms, 1236412.60 ops/s
+  get_missing: 1.06 ms, 1886940.20 ops/s
+  scan: 0.21 ms, 9588463.16 ops/s
+All point reads, missing reads and full scans validated. CSV: "/private/tmp/mapledb-local-review-20260928/smoke-results/parts/bloom-10-round-2.csv"
+=== round=2, Bloom=0 bits/key ===
+LevelDB N=1000 round=2 started
+  write_sequential: 3.22 ms, 310599.13 ops/s
+  write_random: 3.77 ms, 265108.39 ops/s
+  get_sequential: 0.80 ms, 1247271.59 ops/s
+  get_random: 0.86 ms, 1166293.65 ops/s
+  get_hot: 0.68 ms, 1468788.97 ops/s
+  get_missing: 0.83 ms, 1201442.21 ops/s
+  scan: 0.12 ms, 8339101.21 ops/s
+MapleDB N=1000 round=2 started
+  write_sequential: 5.55 ms, 180128.80 ops/s
+  write_random: 6.62 ms, 151101.16 ops/s
+  get_sequential: 0.82 ms, 1225928.89 ops/s
+  get_random: 0.84 ms, 1187707.70 ops/s
+  get_hot: 0.70 ms, 1434806.69 ops/s
+  get_missing: 0.85 ms, 1178956.11 ops/s
+  scan: 0.11 ms, 8905433.20 ops/s
+MapleDB N=2000 round=2 started
+  write_sequential: 10.51 ms, 190231.61 ops/s
+  write_random: 8.99 ms, 222538.50 ops/s
+  get_sequential: 1.48 ms, 1350705.20 ops/s
+  get_random: 1.63 ms, 1228438.60 ops/s
+  get_hot: 1.50 ms, 1333555.59 ops/s
+  get_missing: 1.52 ms, 1311475.41 ops/s
+  scan: 0.18 ms, 11328748.97 ops/s
+LevelDB N=2000 round=2 started
+  write_sequential: 6.80 ms, 294029.40 ops/s
+  write_random: 7.38 ms, 271002.71 ops/s
+  get_sequential: 1.74 ms, 1150913.54 ops/s
+  get_random: 1.86 ms, 1074450.85 ops/s
+  get_hot: 1.50 ms, 1331964.07 ops/s
+  get_missing: 1.78 ms, 1122964.63 ops/s
+  scan: 0.21 ms, 9636603.68 ops/s
+All point reads, missing reads and full scans validated. CSV: "/private/tmp/mapledb-local-review-20260928/smoke-results/parts/bloom-0-round-2.csv"
+Validated CSV and wrote /private/tmp/mapledb-local-review-20260928/smoke-results/summary-off.md
+Validated CSV and wrote /private/tmp/mapledb-local-review-20260928/smoke-results/summary-on.md
+Validated Bloom off/on data and wrote /private/tmp/mapledb-local-review-20260928/smoke-results/effects.md
+Completed paired Bloom experiment: /private/tmp/mapledb-local-review-20260928/smoke-results
+$ /private/tmp/mapledb-local-review-20260928/verify-release/benchmark
+=== minidb Day14 性能基准 ===
+    key 大小 : 17 bytes   val 大小 : 17 bytes
+    BlockCache : 8 MB / DB
+    写入条数 : 100000
+
+  Sequential Write             :   100000 ops     247.9 ms      403412 ops/s  13.08 MB/s
+  Random  Write                :   100000 ops     243.6 ms      410446 ops/s  13.31 MB/s
+  Sequential Read              :   100000 ops      64.7 ms     1544931 ops/s  50.09 MB/s
+  Random  Read                 :   100000 ops      79.2 ms     1262033 ops/s  40.92 MB/s
+  Sequential Scan (Iterator)   :   100000 ops       5.8 ms    17227891 ops/s  558.61 MB/s
+
+=== 基准测试完成 ===

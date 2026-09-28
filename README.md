@@ -29,6 +29,7 @@ ctest --test-dir build --output-on-failure -j4
 
 ## 性能与项目介绍
 
+- [逐项本地提交与源码修复审阅清单](docs/review.md)
 - [简历项目描述、关键技术和面试讲解](docs/resume.md)
 - [启用 Bloom 后与 LevelDB 1.23 的性能对比](docs/performance/bloom/comparison.md)
 - [Bloom 开关收益与完整波动范围](docs/performance/bloom/effects.md)

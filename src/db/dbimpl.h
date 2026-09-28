@@ -73,7 +73,7 @@ private:
     Status Write(WriteBatch* batch);
 
     // 确保 mem_ 有足够空间接收新写入
-    // MemTable 满时：切换到新 MemTable，触发同步 Flush
+    // MemTable 满时切换到新 MemTable，由后台线程落盘；显式 Flush 负责等待完成。
     Status MakeRoomForWrite(std::unique_lock<std::mutex>& lock);
     Status RotateMemTable(); // 必须持 mutex_
 
@@ -149,7 +149,7 @@ private:
     mutable std::mutex      mutex_;         // 保护所有共享状态
     std::condition_variable bg_cv_;         // 后台线程等待 / 写入者等待
     bool                    bg_scheduled_;  // 后台 Compaction 是否已调度
-    bool                    bg_running_ = false;
+    bool                    bg_running_ = false; // 任务已领取且 I/O 尚未结束，区别于 scheduled
     bool                    shutting_down_; // DB 正在关闭
     Status                  bg_error_;      // 后台线程遇到的错误
     std::thread             bg_thread_;     // 后台 Compaction 线程

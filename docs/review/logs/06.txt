@@ -1,0 +1,247 @@
+$ cmake -S /private/tmp/mapledb-local-review-20260928/verify-source -B /private/tmp/mapledb-local-review-20260928/verify-debug -DCMAKE_BUILD_TYPE=Debug
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /private/tmp/mapledb-local-review-20260928/verify-debug
+$ cmake --build /private/tmp/mapledb-local-review-20260928/verify-debug -j4
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/db/memtableiterator.cpp.o
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/db/mergeiterator.cpp.o
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbiterator.cpp.o
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbimpl.cpp.o
+In file included from /private/tmp/mapledb-local-review-20260928/verify-source/src/db/dbiterator.cpp:9:
+/private/tmp/mapledb-local-review-20260928/verify-source/src/db/dbiterator.h:68:34: warning: private field 'icmp_' is not used [-Wunused-private-field]
+   68 |     const InternalKeyComparator& icmp_;
+      |                                  ^
+1 warning generated.
+[  9%] Building CXX object CMakeFiles/mapledb.dir/src/db/tablecache.cpp.o
+[ 11%] Building CXX object CMakeFiles/mapledb.dir/src/table/table.cpp.o
+[ 12%] Linking CXX static library libmapledb.a
+[ 40%] Built target mapledb
+[ 48%] Linking CXX executable daily_test_04
+[ 48%] Linking CXX executable daily_test_03
+[ 48%] Linking CXX executable daily_test_01
+[ 48%] Linking CXX executable daily_test_02
+[ 55%] Built target daily_test_01
+[ 55%] Built target daily_test_02
+[ 55%] Built target daily_test_04
+[ 55%] Built target daily_test_03
+[ 62%] Building CXX object CMakeFiles/daily_test_07.dir/tests/daily_test_07.cpp.o
+[ 62%] Linking CXX executable daily_test_08
+[ 62%] Linking CXX executable daily_test_06
+[ 62%] Linking CXX executable daily_test_05
+[ 68%] Built target daily_test_06
+[ 68%] Built target daily_test_05
+[ 68%] Built target daily_test_08
+[ 74%] Building CXX object CMakeFiles/daily_test_10.dir/tests/daily_test_10.cpp.o
+[ 74%] Building CXX object CMakeFiles/daily_test_09.dir/tests/daily_test_09.cpp.o
+[ 74%] Building CXX object CMakeFiles/daily_test_11.dir/tests/daily_test_11.cpp.o
+[ 75%] Linking CXX executable daily_test_07
+[ 79%] Linking CXX executable daily_test_09
+[ 79%] Linking CXX executable daily_test_10
+[ 79%] Built target daily_test_07
+[ 81%] Linking CXX executable daily_test_11
+[ 83%] Building CXX object CMakeFiles/daily_test_12.dir/tests/daily_test_12.cpp.o
+[ 83%] Built target daily_test_09
+[ 83%] Built target daily_test_10
+[ 83%] Built target daily_test_11
+[ 88%] Building CXX object CMakeFiles/daily_test_13.dir/tests/daily_test_13.cpp.o
+[ 88%] Building CXX object CMakeFiles/storage_regression_test.dir/tests/storage_regression_test.cpp.o
+[ 88%] Building CXX object CMakeFiles/daily_test_14.dir/tests/daily_test_14.cpp.o
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:95:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   95 |     db->Put("b", "B");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:96:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   96 |     db->Put("a", "A");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:97:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   97 |     db->Put("c", "C");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:128:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  128 |         db->Put(k, v);
+      |         ^~~~~~~ ~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:160:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  160 |     db->Put("apple", "1");
+      |     ^~~~~~~ ~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:161:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  161 |     db->Put("cherry", "3");
+      |     ^~~~~~~ ~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:162:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  162 |     db->Put("grape", "5");
+      |     ^~~~~~~ ~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:189:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  189 |     db->Put("x", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:190:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  190 |     db->Put("y", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:191:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  191 |     db->Put("z", "3");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:192:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  192 |     db->Delete("y"); // tombstone
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:216:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  216 |     db->Put("k", "v1");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:217:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  217 |     db->Put("k", "v2");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:218:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  218 |     db->Put("k", "v3"); // 最新版本
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:261:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  261 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:262:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  262 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:263:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  263 |     db->Delete("a");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:264:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  264 |     db->Put("c", "3");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:265:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  265 |     db->Put("a", "4"); // 重新写入 "a"
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:266:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  266 |     db->Delete("b");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:301:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  301 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:339:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  339 |         db->Put(k, k);
+      |         ^~~~~~~ ~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:130:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  130 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:131:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  131 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:132:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  132 |     db->Delete("a/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:371:5:");
+      |     ^~~~~~~~~~ ~~~
+ warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  371 |     db->Put("10", "ten");
+      |     ^~~~~~~ ~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:372:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  372 |     db->Put("20", "twenty");
+      |     ^~~~~~~ ~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:373:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  373 |     db->Put("30", "thirty");
+      |     ^~~~~~~ ~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:156:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  156 |     db->Put("k", "v1");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:157:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  157 |     db->Put("k", "v2");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:158:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  158 |     db->Put("k", "v3");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:165:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  165 |     db->Delete("k");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:166:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  166 |     db->Put("k", "v4");
+      |     ^~~~~~~ ~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:407:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  407 |     db->Put("k", "old");
+      |     ^~~~~~~ ~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:408:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  408 |     db->Delete("k");
+      |     ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:409:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  409 |     db->Put("k", "new");
+      |     ^~~~~~~ ~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:216:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  216 |         db->Put("rec_a", "recovered_a");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:432:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  432 |     db->Put("a", "1");
+      |     ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:217:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:433:  217 |  5: warning:     ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  433 |     db->Put("b", "2");
+      |     ^~~~~~~ ~~~~~~~~
+   db->Put("rec_b", "recovered_b");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_13.cpp:434:5: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:218:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]  434 |     db->Put("c"
+  218, "3");
+      |     ^~~~~~~ ~~~~~~~~
+ |         db->Put("rec_c", "recovered_c");
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:251:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  251 |         db->Put("x", "1");
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:252:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  252 |         db->Put("y", "2");
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:253:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  253 |         db->Delete("x");
+      |         ^~~~~~~~~~ ~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:284:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  284 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:322:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  322 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:360:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  360 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:448:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  448 |         db->Put(key, val);
+      |         ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/daily_test_14.cpp:506:13: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  506 |             db->Put(key, val);
+      |             ^~~~~~~ ~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/storage_regression_test.cpp:31:28: warning: unused function 'Open' [-Wunused-function]
+   31 | static std::unique_ptr<DB> Open(const fs::path& path, const Options& opts) {
+      |                            ^~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/storage_regression_test.cpp:36:13: warning: unused function 'CheckGet' [-Wunused-function]
+   36 | static void CheckGet(DB* db, int key, const std::string& value) {
+      |             ^~~~~~~~
+[ 90%] Linking CXX executable daily_test_12
+31 warnings generated.
+19 warnings generated.
+[ 92%] Linking CXX executable daily_test_13
+[ 94%] Linking CXX executable daily_test_14
+2 warnings generated.
+[ 94%] Built target daily_test_12
+[ 96%] Linking CXX executable storage_regression_test
+[ 96%] Built target daily_test_13
+[ 96%] Built target daily_test_14
+[ 98%] Building CXX object CMakeFiles/benchmark.dir/tests/benchmark.cpp.o
+[ 98%] Built target storage_regression_test
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:86:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+   86 |         db->Put(MakeKey(i), MakeVal(i));
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:116:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  116 |         db->Put(MakeKey(i), MakeVal(i));
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:140:9: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  140 |         db->Put(MakeKey(i), MakeVal(i));
+      |         ^~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:153:13: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  153 |             db->Get(MakeKey(i), &val);
+      |             ^~~~~~~ ~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:171:13: warning: ignoring return value of type 'Status' declared with 'nodiscard' attribute [-Wunused-value]
+  171 |             db->Get(MakeKey(i), &val);
+      |             ^~~~~~~ ~~~~~~~~~~~~~~~~
+/private/tmp/mapledb-local-review-20260928/verify-source/tests/benchmark.cpp:183:57: warning: unused parameter 'N' [-Wunused-parameter]
+  183 | static void BenchSeqScan(const std::string& dbpath, int N) {
+      |                                                         ^
+6 warnings generated.
+[100%] Linking CXX executable benchmark
+[100%] Built target benchmark
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-debug --output-on-failure -R ^(daily_test_13|storage_regression_test)$
+Test project /private/tmp/mapledb-local-review-20260928/verify-debug
+    Start 13: daily_test_13
+1/2 Test #13: daily_test_13 ....................   Passed    0.82 sec
+    Start 15: storage_regression_test
+2/2 Test #15: storage_regression_test ..........   Passed    0.39 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =   1.21 sec

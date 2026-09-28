@@ -1,0 +1,6 @@
+$ python3 /private/tmp/mapledb-local-review-20260928/verify-source/benchmarks/summarize.py /private/tmp/mapledb-local-review-20260928/verify-source/docs/performance/bloom/results-off.csv /private/tmp/mapledb-local-review-20260928/validate-summary-off.md
+Validated CSV and wrote /private/tmp/mapledb-local-review-20260928/validate-summary-off.md
+$ python3 /private/tmp/mapledb-local-review-20260928/verify-source/benchmarks/summarize.py /private/tmp/mapledb-local-review-20260928/verify-source/docs/performance/bloom/results-on.csv /private/tmp/mapledb-local-review-20260928/validate-summary-on.md
+Validated CSV and wrote /private/tmp/mapledb-local-review-20260928/validate-summary-on.md
+$ python3 /private/tmp/mapledb-local-review-20260928/verify-source/benchmarks/summarize_bloom.py /private/tmp/mapledb-local-review-20260928/verify-source/docs/performance/bloom/results-off.csv /private/tmp/mapledb-local-review-20260928/verify-source/docs/performance/bloom/results-on.csv /private/tmp/mapledb-local-review-20260928/validate-effects.md
+Validated Bloom off/on data and wrote /private/tmp/mapledb-local-review-20260928/validate-effects.md

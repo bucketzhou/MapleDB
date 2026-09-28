@@ -1,0 +1,55 @@
+$ cmake -S /private/tmp/mapledb-local-review-20260928/verify-source -B /private/tmp/mapledb-local-review-20260928/verify-debug -DCMAKE_BUILD_TYPE=Debug
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /private/tmp/mapledb-local-review-20260928/verify-debug
+$ cmake --build /private/tmp/mapledb-local-review-20260928/verify-debug -j4
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/versionset.cpp.o
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/logwriter.cpp.o
+[  5%] Building CXX object CMakeFiles/mapledb.dir/src/db/dbimpl.cpp.o
+[  7%] Building CXX object CMakeFiles/mapledb.dir/src/table/tablebuilder.cpp.o
+[  9%] Linking CXX static library libmapledb.a
+[ 40%] Built target mapledb
+[ 48%] Linking CXX executable daily_test_02
+[ 48%] Linking CXX executable daily_test_03
+[ 48%] Linking CXX executable daily_test_04
+[ 48%] Linking CXX executable daily_test_01
+[ 55%] Built target daily_test_01
+[ 55%] Built target daily_test_03
+[ 55%] Built target daily_test_02
+[ 55%] Built target daily_test_04
+[ 62%] Linking CXX executable daily_test_07
+[ 62%] Building CXX object CMakeFiles/daily_test_08.dir/tests/daily_test_08.cpp.o
+[ 62%] Linking CXX executable daily_test_06
+[ 62%] Building CXX object CMakeFiles/daily_test_05.dir/tests/daily_test_05.cpp.o
+[ 66%] Built target daily_test_07
+[ 66%] Built target daily_test_06
+[ 70%] Linking CXX executable daily_test_09
+[ 70%] Linking CXX executable daily_test_10
+[ 74%] Built target daily_test_10
+[ 74%] Built target daily_test_09
+[ 77%] Linking CXX executable daily_test_12
+[ 77%] Linking CXX executable daily_test_11
+[ 79%] Built target daily_test_11
+[ 81%] Built target daily_test_12
+[ 85%] Linking CXX executable daily_test_14
+[ 85%] Linking CXX executable daily_test_13
+[ 88%] Built target daily_test_13
+[ 88%] Built target daily_test_14
+[ 92%] Linking CXX executable benchmark
+[ 92%] Linking CXX executable storage_regression_test
+[ 94%] Linking CXX executable daily_test_05
+[ 98%] Built target benchmark
+[ 98%] Built target storage_regression_test
+[100%] Linking CXX executable daily_test_08
+[100%] Built target daily_test_05
+[100%] Built target daily_test_08
+$ ctest --test-dir /private/tmp/mapledb-local-review-20260928/verify-debug --output-on-failure -R ^(daily_test_09|storage_regression_test)$
+Test project /private/tmp/mapledb-local-review-20260928/verify-debug
+    Start  9: daily_test_09
+1/2 Test  #9: daily_test_09 ....................   Passed    0.61 sec
+    Start 15: storage_regression_test
+2/2 Test #15: storage_regression_test ..........   Passed    1.23 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =   1.85 sec
