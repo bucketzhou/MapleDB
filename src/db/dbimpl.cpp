@@ -1120,6 +1120,57 @@ void DBImpl::BackgroundCompaction() {
 //   3. 用 MergingIterator 归并所有内部 Iterator
 //   4. 用 DBIter 包装，实现 tombstone 过滤 + 版本去重 + 快照隔离
 
+// L1+ 文件互不重叠，一层只需要一个按需打开文件的连接迭代器。
+class LevelIterator final : public Iterator {
+public:
+    // 每层只打开当前文件，跨边界才切换；snapshot_ 保留尚未打开的文件。
+    LevelIterator(TableCache* cache, VersionSet::FileSnapshotPtr snapshot, int level,
+                  const InternalKeyComparator* cmp)
+        : cache_(cache), snapshot_(std::move(snapshot)), level_(level), cmp_(cmp) {}
+    bool Valid() const override { return child_ && child_->Valid(); }
+    void SeekToFirst() override { status_ = Status::OK(); index_ = 0; Open(false, Slice()); }
+    void Seek(const Slice& target) override {
+        status_ = Status::OK();
+        const auto& files = (*snapshot_)[level_];
+        index_ = std::lower_bound(files.begin(), files.end(), target,
+            [this](const FileMetaData& f, const Slice& k) {
+                return cmp_->Compare(Slice(f.largest), k) < 0;
+            }) - files.begin();
+        Open(true, target);
+    }
+    void Next() override { child_->Next(); SkipEmpty(); }
+    const Slice& key() const override { return child_->key(); }
+    const Slice& value() const override { return child_->value(); }
+    Status status() const override { return child_ && !child_->status().Ok() ? child_->status() : status_; }
+private:
+    void Open(bool seek, const Slice& target) {
+        child_.reset();
+        const auto& files = (*snapshot_)[level_];
+        if (index_ < files.size()) {
+            child_.reset(cache_->NewIterator(&files[index_]));
+            if (seek) child_->Seek(target); else child_->SeekToFirst();
+            SkipEmpty();
+        }
+    }
+    void SkipEmpty() {
+        const auto& files = (*snapshot_)[level_];
+        while (child_ && !child_->Valid()) {
+            if (!child_->status().Ok()) { status_ = child_->status(); child_.reset(); break; }
+            child_.reset();
+            if (++index_ == files.size()) break;
+            child_.reset(cache_->NewIterator(&files[index_]));
+            child_->SeekToFirst();
+        }
+    }
+    TableCache* cache_;
+    VersionSet::FileSnapshotPtr snapshot_;
+    int level_;
+    const InternalKeyComparator* cmp_;
+    size_t index_ = 0;
+    std::unique_ptr<Iterator> child_;
+    Status status_;
+};
+
 Iterator* DBImpl::NewIterator() {
     SequenceNumber seq;
     MemTable* mem;
@@ -1138,9 +1189,9 @@ Iterator* DBImpl::NewIterator() {
     inputs.push_back(new MemTableIterator(mem));
     mem->Unref();
     if (imm) { inputs.push_back(new MemTableIterator(imm)); imm->Unref(); }
-    for (int level = 0; level < kNumLevels; ++level)
-        for (const auto& file : (*snapshot)[level])
-            inputs.push_back(table_cache_->NewIterator(&file));
+    for (const auto& file : (*snapshot)[0]) inputs.push_back(table_cache_->NewIterator(&file));
+    for (int level = 1; level < kNumLevels; ++level)
+        if (!(*snapshot)[level].empty()) inputs.push_back(new LevelIterator(table_cache_, snapshot, level, &icmp_));
     auto* result = new DBIter(new MergingIterator(std::move(inputs), &icmp_), seq, icmp_);
     result->RegisterCleanup([](void* p, void*) {
         // 子迭代器销毁后再释放文件快照，避免 GC 提前删除旧 SST。
