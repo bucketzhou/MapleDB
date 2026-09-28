@@ -39,6 +39,7 @@ static void CheckGet(DB* db, int key, const std::string& value) {
     Check(got == value, "incorrect Get value");
 }
 
+// 直接共享一个 Table，隔离 DB 锁/后台线程的影响，验证不同 offset 的并发读不会串位置。
 static void ConcurrentTableReads(const fs::path& root) {
     Options opts;
     opts.block_size = 1024;
@@ -72,38 +73,6 @@ static void ConcurrentTableReads(const fs::path& root) {
     });
     for (auto& reader : readers) reader.join();
     Check(good.load(), "shared Table concurrent reads returned incorrect bytes");
-}
-
-static void IteratorCacheLifetimeAndComparator(const fs::path& root) {
-    const auto path = root / "tables";
-    fs::create_directories(path);
-    Options opts;
-    opts.block_size = 32;
-    InternalKeyComparator cmp;
-    {
-        TableBuilder builder((path / "000001.ldb").string(), opts);
-        for (uint64_t seq : {300, 200, 100}) {
-            std::string key;
-            AppendInternalKey(&key, Slice("same"), seq, kTypeValue);
-            builder.Add(Slice(key), Slice(std::to_string(seq)));
-        }
-        OK(builder.Finish());
-    }
-    TableCache cache(path.string(), opts, &cmp, 0); // Release 后会立即销毁未持有的条目
-    FileMetaData file;
-    file.number = 1;
-    file.file_size = fs::file_size(path / "000001.ldb");
-    std::unique_ptr<Iterator> it(cache.NewIterator(&file));
-    cache.Evict(1);
-    std::string target;
-    AppendInternalKey(&target, Slice("same"), 250, kTypeValue);
-    it->Seek(Slice(target));
-    Check(it->Valid(), "iterator lost Table after eviction");
-    Check(it->value().ToString() == "200", "iterator used wrong internal comparator");
-    OK(it->status());
-    file.number = 999;
-    std::unique_ptr<Iterator> missing(cache.NewIterator(&file));
-    Check(!missing->status().Ok(), "missing SSTable error was hidden");
 }
 
 static void OpenErrors(const fs::path& root) {
@@ -209,6 +178,38 @@ static void ConcurrentReadsAndFlush(const fs::path& root) {
     OK(db->Flush());
     for (auto& thread : readers) thread.join();
     Check(good.load(), "concurrent read returned incorrect bytes");
+}
+
+static void IteratorCacheLifetimeAndComparator(const fs::path& root) {
+    const auto path = root / "tables";
+    fs::create_directories(path);
+    Options opts;
+    opts.block_size = 32;
+    InternalKeyComparator cmp;
+    {
+        TableBuilder builder((path / "000001.ldb").string(), opts, &cmp);
+        for (uint64_t seq : {300, 200, 100}) {
+            std::string key;
+            AppendInternalKey(&key, Slice("same"), seq, kTypeValue);
+            builder.Add(Slice(key), Slice(std::to_string(seq)));
+        }
+        OK(builder.Finish());
+    }
+    TableCache cache(path.string(), opts, &cmp, 0); // Release 后会立即销毁未持有的条目
+    FileMetaData file;
+    file.number = 1;
+    file.file_size = fs::file_size(path / "000001.ldb");
+    std::unique_ptr<Iterator> it(cache.NewIterator(&file));
+    cache.Evict(1);
+    std::string target;
+    AppendInternalKey(&target, Slice("same"), 250, kTypeValue);
+    it->Seek(Slice(target));
+    Check(it->Valid(), "iterator lost Table after eviction");
+    Check(it->value().ToString() == "200", "iterator used wrong internal comparator");
+    OK(it->status());
+    file.number = 999;
+    std::unique_ptr<Iterator> missing(cache.NewIterator(&file));
+    Check(!missing->status().Ok(), "missing SSTable error was hidden");
 }
 
 int main() {

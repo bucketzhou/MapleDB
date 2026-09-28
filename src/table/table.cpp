@@ -16,11 +16,11 @@
 
 #include <cassert>
 #include <cstring>
-#include <unistd.h>
-#include <memory>
-#include <limits>
 #include <cerrno>
+#include <limits>
+#include <memory>
 #include <mutex>
+#include <unistd.h>
 
 namespace mapledb {
 
@@ -38,8 +38,7 @@ static void TblInitCRC() {
     }
 }
 
-// CRC 初始化由 call_once 保护，多个读线程不会观察到部分初始化结果。
-[[maybe_unused]]
+// 可选过滤器必须校验 CRC，损坏的 bit 数组不能用于排除 key。
 static uint32_t TblCRC32(const char* data, size_t len) {
     std::call_once(tbl_crc_init, TblInitCRC);
     uint32_t c = 0xFFFFFFFFu;
@@ -134,8 +133,33 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     // Day11: 若启用了 block_cache，申请一个唯一 ID 用于区分不同文件的 Block
     rep->cache_id = (options.block_cache != nullptr) ? options.block_cache->NewId() : 0;
     std::unique_ptr<Table> opened(new Table(rep));
+    opened->ReadFilter();
     *table = opened.release();
     return Status::OK();
+}
+
+void Table::ReadFilter() {
+    if (rep_->options.bloom_bits_per_key <= 0 ||
+        !FilterKeyModeForComparator(rep_->cmp, &rep_->filter_key_mode)) return;
+    size_t size = 0;
+    std::unique_ptr<char[]> raw;
+    Status s = ReadRawBlock(rep_->file, rep_->file_size, rep_->metaindex_handle, &raw, &size, true);
+    if (!s.Ok()) return;
+    Block meta(raw.release(), size, true);
+    std::unique_ptr<Block::Iter> it(meta.NewIterator(BytewiseComparator()));
+    it->Seek(Slice(kBloomFilterMetaKey));
+    if (!it->Valid() || it->key() != Slice(kBloomFilterMetaKey)) return;
+    Slice encoding = it->value();
+    if (encoding.Empty() || static_cast<uint8_t>(encoding[0]) !=
+                            static_cast<uint8_t>(rep_->filter_key_mode)) return;
+    encoding.RemovePrefix(1);
+    BlockHandle handle;
+    s = handle.DecodeFrom(&encoding);
+    if (!s.Ok() || !encoding.Empty()) return;
+    s = ReadRawBlock(rep_->file, rep_->file_size, handle, &raw, &size, true);
+    if (!s.Ok()) return;
+    rep_->filter_data.assign(raw.get(), size);
+    rep_->filter.reset(new FilterBlockReader(Slice(rep_->filter_data)));
 }
 
 // ── Table::~Table ─────────────────────────────────────────────
@@ -148,6 +172,7 @@ Table::~Table() {
 }
 
 // ── Table::ReadBlock ──────────────────────────────────────────
+// 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
 
 Status Table::ReadBlock(const BlockHandle& handle, Block** result,
                         Cache::Handle** cache_handle) const {
@@ -202,6 +227,23 @@ Status Table::InternalGet(const Slice& key, void* arg,
         BlockHandle handle;
         Slice       tmp = handle_value;
         s               = handle.DecodeFrom(&tmp);
+
+        if (s.Ok() && rep_->filter) {
+            // 查询的 sequence/type 会变化，过滤器只检查稳定的 user key。
+            Slice filter_key = key;
+            if (rep_->filter_key_mode == FilterKeyMode::kInternalKey) {
+                if (key.Size() < 8) {
+                    delete iiter;
+                    return Status::Corruption("invalid InternalKey lookup");
+                }
+                filter_key = Slice(key.Data(), key.Size() - 8);
+            }
+            if (!rep_->filter->KeyMayMatch(handle.offset(), filter_key)) {
+                // OK 且不调用回调表示本表未命中，DB 可继续查其他候选表。
+                delete iiter;
+                return Status::OK();
+            }
+        }
 
         if (s.Ok()) {
             // ③ 从文件中读取目标 DataBlock

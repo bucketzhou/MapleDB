@@ -14,8 +14,8 @@
 
 #include <cassert>
 #include <cstring>
-#include <unistd.h>
 #include <mutex>
+#include <unistd.h>
 
 namespace mapledb {
 
@@ -51,7 +51,8 @@ struct TableBuilder::BlockBuilderWrapper {
 
 // ── 构造/析构 ─────────────────────────────────────────────────
 
-TableBuilder::TableBuilder(const std::string& filename, const Options& options) :
+TableBuilder::TableBuilder(const std::string& filename, const Options& options,
+                           const Comparator* cmp) :
     options_(options), file_(nullptr), offset_(0), num_entries_(0), closed_(false),
     pending_index_entry_(false) {
     file_ = fopen(filename.c_str(), "wb");
@@ -65,6 +66,10 @@ TableBuilder::TableBuilder(const std::string& filename, const Options& options) 
     // 方便二分查找）
     data_block_  = new BlockBuilderWrapper(options_.block_restart_interval);
     index_block_ = new BlockBuilderWrapper(1);
+    if (options_.bloom_bits_per_key > 0 && FilterKeyModeForComparator(cmp, &filter_key_mode_)) {
+        filter_block_.reset(new FilterBlockBuilder(options_.bloom_bits_per_key));
+        filter_block_->StartBlock(0);
+    }
 }
 
 TableBuilder::~TableBuilder() {
@@ -132,6 +137,7 @@ void TableBuilder::Flush() {
 
     // 完成 data block 构建，写入文件
     WriteBlock(data_block_->builder.Finish(), &pending_handle_);
+    if (filter_block_ && status_.Ok()) filter_block_->StartBlock(offset_);
 
     data_block_->builder.Reset();
 
@@ -150,6 +156,17 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     if (!status_.Ok())
         return;
     assert(!closed_);
+
+    if (filter_block_) {
+        // 删除标记也必须加入：漏掉 tombstone 会让 DB 从旧表读出已删除值。
+        if (filter_key_mode_ == FilterKeyMode::kInternalKey) {
+            if (key.Size() < 8) {
+                status_ = Status::InvalidArgument("invalid InternalKey for Bloom Filter");
+                return;
+            }
+            filter_block_->AddKey(Slice(key.Data(), key.Size() - 8));
+        } else filter_block_->AddKey(key);
+    }
 
     // 如果上一个 DataBlock 刚 flush 完，先写 index entry
     // index entry 的 key 用 last_key_（上一个 block 的最后一个 key）
@@ -194,11 +211,17 @@ Status TableBuilder::Finish() {
         pending_index_entry_ = false;
     }
 
-    // 2. 写 MetaIndex Block（我们暂不支持 filter，写一个空 block）
+    // 2. 写 Filter Block，再通过 MetaIndex 保存格式模式与 BlockHandle。
     BlockHandle metaindex_handle;
     {
         BlockBuilder meta_index_builder(1);
-        // 空的 MetaIndex Block（无 filter policy）
+        if (filter_block_) {
+            BlockHandle filter_handle;
+            WriteBlock(filter_block_->Finish(), &filter_handle);
+            std::string encoding(1, static_cast<char>(filter_key_mode_));
+            filter_handle.EncodeTo(&encoding);
+            meta_index_builder.Add(Slice(kBloomFilterMetaKey), Slice(encoding));
+        }
         WriteBlock(meta_index_builder.Finish(), &metaindex_handle);
     }
     if (!status_.Ok())

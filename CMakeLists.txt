@@ -65,5 +65,6 @@ add_mapledb_test(daily_test_12)
 add_mapledb_test(daily_test_13)
 add_mapledb_test(daily_test_14)
 add_mapledb_test(storage_regression_test)
+add_mapledb_test(bloom_integration_test)
 add_mapledb_test(benchmark)
 

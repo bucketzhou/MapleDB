@@ -12,9 +12,11 @@
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
 #include "table/format.h"
+#include "table/filter_block.h"
 
 #include <cstdio>
 #include <string>
+#include <memory>
 
 namespace mapledb {
 
@@ -22,7 +24,10 @@ class TableBuilder {
 public:
     // filename：SSTable 文件路径（会创建/覆盖）
     // options ：DB 配置（block_size 等）
-    TableBuilder(const std::string& filename, const Options& options);
+    // cmp 决定过滤器使用普通 key 还是提取 InternalKey 中的 user key。
+    // DB 必须传 InternalKeyComparator；默认兼容普通 key 的 TableBuilder 调用。
+    TableBuilder(const std::string& filename, const Options& options,
+                 const Comparator* cmp = BytewiseComparator());
 
     ~TableBuilder();
 
@@ -30,7 +35,7 @@ public:
     TableBuilder& operator=(const TableBuilder&) = delete;
 
     // 追加一条 kv（key 必须严格递增）
-    // key 是 InternalKey（user_key + seq + type）
+    // key 的格式与构造时的 cmp 一致。
     void Add(const Slice& key, const Slice& value);
 
     // 完成文件写入（写 MetaIndex Block、Index Block、Footer）
@@ -78,5 +83,7 @@ private:
     bool        pending_index_entry_; // 上一个 block flush 完，等待写 index entry
     BlockHandle pending_handle_;      // 上一个 block 的 handle
     std::string last_key_;            // 上一个写入的 key（用于生成 index key）
+    FilterKeyMode filter_key_mode_ = FilterKeyMode::kUserKey;
+    std::unique_ptr<FilterBlockBuilder> filter_block_;
 };
 } // namespace mapledb

@@ -18,6 +18,7 @@
 #include "mapledb/status.h"
 #include "table/block.h" // 包含完整的 Block + Block::Iter 定义
 #include "table/format.h"
+#include "table/filter_block.h"
 #include "util/cache.h"
 
 #include <cstdio>
@@ -93,8 +94,12 @@ private:
         BlockHandle       metaindex_handle;
         const Comparator* cmp;      // ← 新增：存储传入的比较器
         uint64_t          cache_id; // Day 11 新增：BlockCache 分区 ID（0 表示未启用）
+        std::string filter_data; // 常驻 Table，不占用 DataBlock LRU 配额。
+        std::unique_ptr<FilterBlockReader> filter;
+        FilterKeyMode filter_key_mode = FilterKeyMode::kUserKey;
     };
 
+    void ReadFilter(); // 可选 metadata 不可用时回退到正常查询。
 
     explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}
 

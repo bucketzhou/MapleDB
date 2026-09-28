@@ -7,10 +7,12 @@
  */
 
 #include "util/bloom.h"
+#include "util/coding.h"
 
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 
 namespace mapledb {
 
@@ -27,8 +29,7 @@ uint32_t BloomFilter::BloomHash(const Slice& key) {
 
     // 每次处理 4 字节
     while (n >= 4) {
-        uint32_t w;
-        memcpy(&w, data, 4);
+        uint32_t w = DecodeFixed32(data); // 持久化 hash 使用固定小端序。
         data += 4;
         n -= 4;
         h += w;
@@ -55,10 +56,10 @@ uint32_t BloomFilter::BloomHash(const Slice& key) {
 
 // ── 构造函数 ─────────────────────────────────────────────────
 
-BloomFilter::BloomFilter(int bits_per_key) : bits_per_key_(bits_per_key) {
+BloomFilter::BloomFilter(int bits_per_key) : bits_per_key_(std::max(1, bits_per_key)) {
     // k = bits_per_key * ln(2) ≈ bits_per_key * 0.693
     // 向下取整减少探测开销（LevelDB 同款策略）
-    k_ = static_cast<size_t>(bits_per_key * 0.69);
+    k_ = static_cast<size_t>(std::min(30.0, bits_per_key_ * 0.69));
     if (k_ < 1)
         k_ = 1;
     if (k_ > 30)
@@ -93,7 +94,7 @@ void BloomFilter::CreateFilter(const std::vector<Slice>& keys, std::string* dst)
         // 参考 [Kirsch, Mitzenmacher 2006]
         const uint32_t delta = (h >> 17) | (h << 15);
         for (size_t j = 0; j < k_; j++) {
-            const uint32_t bitpos = h % static_cast<uint32_t>(bits);
+            const size_t bitpos = h % bits;
             array[bitpos / 8] |= (1 << (bitpos % 8));
             h += delta;
         }
@@ -105,7 +106,7 @@ void BloomFilter::CreateFilter(const std::vector<Slice>& keys, std::string* dst)
 bool BloomFilter::KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {
     const size_t len = bloom_filter.Size();
     if (len < 2)
-        return false; // 至少要有 1 字节数据 + 1 字节 k 值
+        return true; // 无法解释的过滤器保守回退，避免错误排除已有 key。
 
     const char* array = bloom_filter.Data();
     // 最后 1 字节是 k_（哈希函数数量）
@@ -120,7 +121,7 @@ bool BloomFilter::KeyMayMatch(const Slice& key, const Slice& bloom_filter) const
     const uint32_t delta = (h >> 17) | (h << 15);
 
     for (size_t j = 0; j < k; j++) {
-        const uint32_t bitpos = h % static_cast<uint32_t>(bits);
+        const size_t bitpos = h % bits;
         if ((array[bitpos / 8] & (1 << (bitpos % 8))) == 0) {
             return false; // 某个 bit 为 0 → 肯定不存在
         }

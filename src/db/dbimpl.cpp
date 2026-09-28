@@ -364,7 +364,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
     std::string path = TableFileName(file_number);
 
     Options      tb_opts = options_;
-    TableBuilder builder(path, tb_opts);
+    TableBuilder builder(path, tb_opts, &icmp_);
 
     // 修复：MemTable 没有嵌套 Iterator 类
     // NewIterator() 返回的是 MemTable::Table::Iterator*
@@ -884,7 +884,7 @@ Status DBImpl::DoCompactionWork(Compaction* c) {
                 output_number   = versions_.NewFileNumber();
                 output_smallest = std::string(ik.Data(), ik.Size());
                 output_largest  = output_smallest;
-                builder         = new TableBuilder(TableFileName(output_number), options_);
+                builder         = new TableBuilder(TableFileName(output_number), options_, &icmp_);
             }
 
             output_largest = std::string(ik.Data(), ik.Size());
