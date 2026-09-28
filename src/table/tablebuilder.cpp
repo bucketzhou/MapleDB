@@ -10,9 +10,11 @@
 
 #include "table/blockbuilder.h"
 #include "util/coding.h"
+#include "util/fileutil.h"
 
 #include <cassert>
 #include <cstring>
+#include <unistd.h>
 #include <mutex>
 
 namespace mapledb {
@@ -139,7 +141,7 @@ void TableBuilder::Flush() {
     pending_index_entry_ = true;
 
     // 刷新文件缓冲（不一定 fsync，但保证数据在内核缓冲区）
-    fflush(file_);
+    if (fflush(file_) != 0) status_ = Status::IOError("SSTable flush failed");
 }
 
 // ── Add：追加一条 kv ──────────────────────────────────────────
@@ -225,8 +227,10 @@ Status TableBuilder::Finish() {
     }
     offset_ += footer_encoding.size();
 
-    fflush(file_);
-    fclose(file_);
+    // fflush 只进入内核缓冲；发布 MANIFEST 前必须同步完整 SST 内容。
+    if (fflush(file_) != 0 || SyncFileDescriptor(fileno(file_)) != 0)
+        status_ = Status::IOError("SSTable sync failed");
+    if (fclose(file_) != 0 && status_.Ok()) status_ = Status::IOError("SSTable close failed");
     file_ = nullptr;
 
     return status_;

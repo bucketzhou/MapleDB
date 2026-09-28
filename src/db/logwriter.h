@@ -36,8 +36,9 @@ public:
     // sync=true：写后调用 fsync 强制刷盘（性能 vs 安全的权衡）
     Status AddRecord(const Slice& slice, bool sync = false);
 
-    // 强制将内核缓冲区刷到磁盘（比每次 sync 更灵活）
+    // 将 stdio 缓冲写入内核；Sync 才同步到持久化存储。
     Status Flush();
+    Status Sync();
     bool IsOpen() const { return dest_ != nullptr; }
 
 private:

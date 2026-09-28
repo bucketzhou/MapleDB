@@ -146,6 +146,7 @@ private:
 
     // MANIFEST 文件的 WAL 写入器（nullptr 表示还没打开）
     log::Writer* manifest_writer_;
+    bool manifest_needs_current_ = false;
 };
 
 } // namespace mapledb

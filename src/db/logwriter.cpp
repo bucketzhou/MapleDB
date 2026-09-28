@@ -3,6 +3,7 @@
 #include "db/logwriter.h"
 
 #include "util/coding.h"
+#include "util/fileutil.h"
 
 #include <cassert>
 #include <cstring>
@@ -183,18 +184,19 @@ Status Writer::AddRecord(const Slice& slice, bool sync) {
 
     } while (left > 0);
 
-    // 可选：强制刷盘（sync 模式，牺牲性能换安全）
-    if (sync) {
-        fflush(dest_);
-        fsync(fileno(dest_));
-    }
-
-    return Status::OK();
+    return sync ? Sync() : Status::OK();
 }
 
 Status Writer::Flush() {
     if (!dest_) return Status::IOError("WAL file not open");
     if (fflush(dest_) != 0) return Status::IOError("WAL flush failed");
+    return Status::OK();
+}
+
+Status Writer::Sync() {
+    Status s = Flush();
+    if (!s.Ok()) return s;
+    if (SyncFileDescriptor(fileno(dest_)) != 0) return Status::IOError("WAL sync failed");
     return Status::OK();
 }
 

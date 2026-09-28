@@ -16,6 +16,7 @@
     #include "db/versionset.h"
 
     #include "util/coding.h"
+    #include "util/fileutil.h"
 
     #include <algorithm>
     #include <cassert>
@@ -23,6 +24,8 @@
     #include <filesystem>
     #include <sstream>
     #include <system_error>
+    #include <fcntl.h>
+    #include <unistd.h>
 
 namespace mapledb {
 
@@ -43,14 +46,19 @@ static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number
     snprintf(numstr, sizeof(numstr), "%06llu", static_cast<unsigned long long>(manifest_number));
     std::string manifest_base = std::string("MANIFEST-") + numstr;
 
-    std::string current_file = CurrentFileName(dbname);
-    FILE*       f            = fopen(current_file.c_str(), "w");
-    if (!f) {
-        return Status::IOError("cannot write CURRENT: " + current_file);
-    }
-    fprintf(f, "%s\n", manifest_base.c_str());
-    fclose(f);
-    return Status::OK();
+    const std::string current_file = CurrentFileName(dbname);
+    // 先同步临时 CURRENT，再原子 rename，最后同步目录项，避免覆盖时留下半个文件。
+    const std::string temp = current_file + ".tmp";
+    FILE* f = fopen(temp.c_str(), "w");
+    if (!f) return Status::IOError("cannot write CURRENT");
+    bool failed = fprintf(f, "%s\n", manifest_base.c_str()) < 0;
+    if (fflush(f) != 0 || SyncFileDescriptor(fileno(f)) != 0) failed = true;
+    if (fclose(f) != 0) failed = true;
+    if (failed) return Status::IOError("cannot sync CURRENT");
+    std::error_code ec;
+    fs::rename(temp, current_file, ec);
+    if (ec) return Status::IOError("cannot replace CURRENT: " + ec.message());
+    return SyncDirectory(dbname);
 }
 
 // ── VersionSet 构造/析构 ──────────────────────────────────────
@@ -172,8 +180,8 @@ Status VersionSet::EnsureManifestOpen() {
     // 创建新 MANIFEST（wb，覆盖写）
     manifest_writer_ = new log::Writer(manifest_path);
 
-    // 更新 CURRENT
-    return SetCurrentFile(dbname_, manifest_file_number_);
+    manifest_needs_current_ = true;
+    return Status::OK();
 }
 
 // ── WriteSnapshot ────────────────────────────────────────────
@@ -223,10 +231,17 @@ Status VersionSet::LogAndApply(VersionEdit* edit) {
     if (!s.Ok())
         return s;
 
-    s = manifest_writer_->Flush();
+    s = SyncDirectory(dbname_); // 先持久化新文件的目录项，再发布 MANIFEST。
+    if (!s.Ok()) return s;
+    s = manifest_writer_->Sync();
     if (!s.Ok())
         return s;
 
+    if (manifest_needs_current_) {
+        s = SetCurrentFile(dbname_, manifest_file_number_);
+        if (!s.Ok()) return s;
+        manifest_needs_current_ = false;
+    }
     // 应用到内存
     ApplyEdit(*edit);
 
@@ -318,6 +333,7 @@ Status VersionSet::Recover() {
     // 用带初始偏移量的构造函数，确保 block_offset_ 正确
     manifest_writer_ = new log::Writer(manifest_path, manifest_size);
     if (!manifest_writer_->IsOpen()) return Status::IOError("cannot reopen MANIFEST");
+    manifest_needs_current_ = false;
 
     return Status::OK();
 }
