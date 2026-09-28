@@ -125,12 +125,37 @@ static void OpenErrors(const fs::path& root) {
           "filesystem failure did not return Status");
 }
 
+static void RepeatedRecovery(const fs::path& root) {
+    Options opts;
+    const auto path = root / "recovery";
+    {
+        auto db = Open(path, opts);
+        for (int i = 0; i < 200; ++i) OK(db->Put(Key(i), "tail"));
+    }
+    for (int reopen = 0; reopen < 3; ++reopen) {
+        auto db = Open(path, opts);
+        for (int i = 0; i < 200; ++i) CheckGet(db.get(), i, "tail");
+    }
+    opts.writer_buffer_size = 64 * 1024;
+    const auto large = root / "multi-wal";
+    const std::string value(512, 'v');
+    {
+        auto db = Open(large, opts);
+        for (int i = 0; i < 3000; ++i) OK(db->Put(Key(i), value));
+    }
+    for (int reopen = 0; reopen < 2; ++reopen) {
+        auto db = Open(large, opts);
+        for (int i = 0; i < 3000; ++i) CheckGet(db.get(), i, value);
+    }
+}
+
 int main() {
     const auto root = fs::temp_directory_path() / ("mapledb-regression-" + std::to_string(getpid()));
     try {
         fs::create_directories(root);
         ConcurrentTableReads(root);
         OpenErrors(root);
+        RepeatedRecovery(root);
         IteratorCacheLifetimeAndComparator(root);
         fs::remove_all(root);
         std::cout << "storage regression tests passed\n";

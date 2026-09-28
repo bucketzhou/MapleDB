@@ -44,6 +44,7 @@ Writer::Writer(const std::string& dest_filename) : Writer(dest_filename, 0) {
     if (!dest_)
         return;
 
+    // 追加已有 WAL 时，分片必须从真实 block 内偏移继续，否则跨 32 KiB 的记录无法恢复。
     // 追加模式保证写入在末尾，但这里仍显式定位，以可靠地查询文件长度。
     if (fseek(dest_, 0, SEEK_END) != 0) {
         fclose(dest_);

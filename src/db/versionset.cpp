@@ -150,6 +150,15 @@ void VersionSet::AddLiveFiles(std::set<uint64_t>* live) {
     }
 }
 
+void VersionSet::MarkFileNumberUsed(uint64_t number) {
+    // WAL 可能尚未记入 MANIFEST；先占用已存在编号，避免恢复时新文件覆盖旧文件。
+    // relaxed 只保护编号的原子性，版本发布仍靠 DB mutex 和 MANIFEST 协议。
+    // CAS 失败更新 cur；weak 虚假失败也由 while 重新检查。
+    uint64_t cur = next_file_number_.load(std::memory_order_relaxed);
+    while (cur <= number && !next_file_number_.compare_exchange_weak(
+        cur, number + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+}
+
 // ── EnsureManifestOpen ───────────────────────────────────────
 
 Status VersionSet::EnsureManifestOpen() {
@@ -272,28 +281,12 @@ Status VersionSet::Recover() {
     Slice       record;
     std::string scratch;
 
-    int record_count = 0; // ← 加这行
-
     while (reader.ReadRecord(&record, &scratch)) {
-        record_count++;
-        printf("[Recover] Read record #%d, size=%zu\n", record_count, record.Size()); // ← 加这行
-
         VersionEdit edit;
-        Status      s = edit.DecodeFrom(record);
-        if (!s.Ok()) {
-            printf("[Recover] DecodeFrom FAILED: %s\n", s.ToString().c_str()); // ← 加这行
-            return Status::Corruption("MANIFEST record decode error: " + s.ToString());
-        }
-        printf("[Recover] Edit: nfiles=%zu, dfiles=%zu\n", // ← 加这行
-               edit.new_files().size(), edit.deleted_files().size());
-
+        Status s = edit.DecodeFrom(record);
+        if (!s.Ok()) return Status::Corruption("MANIFEST record decode error: " + s.ToString());
         ApplyEdit(edit);
-
-        printf("[Recover] After Apply: L0=%d L1=%d\n", // ← 加这行
-               NumFiles(0), NumFiles(1));
     }
-
-    printf("[Recover] Total records read: %d\n", record_count); // ← 加这行
 
     // ④ 确保 next_file_number_ 不小于所有已知文件号+1
     for (int level = 0; level < kNumLevels; level++) {
@@ -324,6 +317,7 @@ Status VersionSet::Recover() {
     }
     // 用带初始偏移量的构造函数，确保 block_offset_ 正确
     manifest_writer_ = new log::Writer(manifest_path, manifest_size);
+    if (!manifest_writer_->IsOpen()) return Status::IOError("cannot reopen MANIFEST");
 
     return Status::OK();
 }

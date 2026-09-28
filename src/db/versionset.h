@@ -44,6 +44,7 @@ public:
     // 调用方持 DB mutex；快照存活期间其 SSTable 不会被垃圾回收。
     FileSnapshotPtr CurrentFiles() const { return current_files_; }
     void AddLiveFiles(std::set<uint64_t>* live);
+    void MarkFileNumberUsed(uint64_t number);
     // dbname    : DB 目录路径（MANIFEST 等文件在此目录下）
     // options   : DB 配置
     VersionSet(const std::string& dbname, const Options& options);

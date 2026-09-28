@@ -100,6 +100,7 @@ Status DBImpl::Open() {
             if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".log") {
                 try {
                     uint64_t num = std::stoull(fname);
+                    versions_.MarkFileNumberUsed(num);
                     if (num >= min_log) {
                         logs_to_recover.push_back(num);
                     }
@@ -116,6 +117,13 @@ Status DBImpl::Open() {
                 return rs;
         }
         versions_.SetLastSequence(max_sequence);
+        // 在发布新 WAL 编号前持久化恢复出的尾部数据，避免再次 Open 时忽略旧 WAL。
+        if (mem_ != nullptr) {
+            imm_ = mem_;
+            mem_ = nullptr;
+            Status recovered = CompactMemTable();
+            if (!recovered.Ok()) return recovered;
+        }
 
     } else {
         // ── 全新 DB 路径 ──────────────────────────────────────
@@ -600,6 +608,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, SequenceNumber* max_sequence)
         if (last_seq > *max_sequence) {
             *max_sequence = last_seq;
         }
+        versions_.SetLastSequence(*max_sequence);
 
         // 如果 MemTable 已超过阈值，触发 Flush
         if (mem_->ApproximateMemoryUsage() >= options_.writer_buffer_size) {
