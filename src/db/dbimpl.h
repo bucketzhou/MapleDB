@@ -48,6 +48,7 @@ public:
     Status Put(const std::string& key, const std::string& value) override;
     Status Delete(const std::string& key) override;
     Status Get(const std::string& key, std::string* value) override;
+    Status Flush() override;
 
     // ── 内部初始化（由 DB::Open 调用）────────────────────────
     Status Open();
@@ -74,6 +75,7 @@ private:
     // 确保 mem_ 有足够空间接收新写入
     // MemTable 满时：切换到新 MemTable，触发同步 Flush
     Status MakeRoomForWrite(std::unique_lock<std::mutex>& lock);
+    Status RotateMemTable(); // 必须持 mutex_
 
     // ── Minor Compaction（MemTable Flush）────────────────────
 
@@ -147,6 +149,7 @@ private:
     mutable std::mutex      mutex_;         // 保护所有共享状态
     std::condition_variable bg_cv_;         // 后台线程等待 / 写入者等待
     bool                    bg_scheduled_;  // 后台 Compaction 是否已调度
+    bool                    bg_running_ = false;
     bool                    shutting_down_; // DB 正在关闭
     Status                  bg_error_;      // 后台线程遇到的错误
     std::thread             bg_thread_;     // 后台 Compaction 线程

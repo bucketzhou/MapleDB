@@ -149,6 +149,68 @@ static void RepeatedRecovery(const fs::path& root) {
     }
 }
 
+static void SnapshotDuringCompaction(const fs::path& root) {
+    Options opts;
+    opts.writer_buffer_size = 64 * 1024;
+    opts.l0_compaction_trigger = 2;
+    std::unique_ptr<Cache> cache(NewLRUCache(64 * 1024));
+    opts.block_cache = cache.get();
+    auto db = Open(root / "snapshot", opts);
+    const int n = 3000;
+    const std::string old_value(96, 'a');
+    for (int i = 0; i < n; ++i) OK(db->Put(Key(i), old_value));
+    OK(db->Flush());
+    std::unique_ptr<Iterator> old(db->NewIterator());
+    // 尚未 Seek 的迭代器也必须保留旧 SSTable。
+    for (int i = 0; i < n; ++i) {
+        if (i % 3 == 0) OK(db->Delete(Key(i)));
+        else OK(db->Put(Key(i), "new"));
+    }
+    OK(db->Flush());
+    int count = 0;
+    for (old->SeekToFirst(); old->Valid(); old->Next(), ++count) {
+        Check(old->key().ToString() == Key(count), "snapshot key changed");
+        Check(old->value().ToString() == old_value, "snapshot value changed");
+    }
+    OK(old->status());
+    Check(count == n, "snapshot lost keys");
+    old.reset();
+    for (int i = 0; i < n; ++i) {
+        std::string value;
+        const Status s = db->Get(Key(i), &value);
+        if (i % 3 == 0) Check(s.IsNotFound(), "deleted key reappeared");
+        else { OK(s); Check(value == "new", "overwrite lost"); }
+    }
+}
+
+static void ConcurrentReadsAndFlush(const fs::path& root) {
+    Options opts;
+    opts.writer_buffer_size = 64 * 1024;
+    opts.l0_compaction_trigger = 2;
+    std::unique_ptr<Cache> cache(NewLRUCache(16 * 1024));
+    opts.block_cache = cache.get();
+    auto db = Open(root / "concurrent", opts);
+    const int n = 2000;
+    const std::string value(256, 'x');
+    for (int i = 0; i < n; ++i) OK(db->Put(Key(i), value));
+    OK(db->Flush());
+    cache->Prune();
+    std::atomic<bool> good{true};
+    std::vector<std::thread> readers;
+    for (int t = 0; t < 6; ++t) readers.emplace_back([&, t] {
+        for (int j = 0; j < 5000; ++j) {
+            std::string got;
+            const auto s = db->Get(Key((j * 997 + t * 131) % n), &got);
+            if (!s.Ok() || got != value) good = false;
+            if (j % 100 == 0) cache->Prune();
+        }
+    });
+    for (int i = n; i < 2 * n; ++i) OK(db->Put(Key(i), value));
+    OK(db->Flush());
+    for (auto& thread : readers) thread.join();
+    Check(good.load(), "concurrent read returned incorrect bytes");
+}
+
 int main() {
     const auto root = fs::temp_directory_path() / ("mapledb-regression-" + std::to_string(getpid()));
     try {
@@ -156,6 +218,8 @@ int main() {
         ConcurrentTableReads(root);
         OpenErrors(root);
         RepeatedRecovery(root);
+        SnapshotDuringCompaction(root);
+        ConcurrentReadsAndFlush(root);
         IteratorCacheLifetimeAndComparator(root);
         fs::remove_all(root);
         std::cout << "storage regression tests passed\n";

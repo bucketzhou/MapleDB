@@ -248,20 +248,47 @@ Status DBImpl::MakeRoomForWrite(std::unique_lock<std::mutex>& lock) {
             continue;          // 被唤醒后重新检查所有条件
         }
 
-        // mem_ 已满且 imm_ 为空：轮转
-        imm_ = mem_;
-        mem_ = new MemTable(icmp_);
-        mem_->Ref();
-
-        // 创建新 WAL
-        delete log_writer_;
-        log_number_ = versions_.NewFileNumber();
-        log_writer_ = new log::Writer(LogFileName(log_number_));
-
-        // 通知后台线程开始 Flush
-        ScheduleCompaction();
-        return Status::OK();
+        return RotateMemTable();
     }
+}
+
+Status DBImpl::RotateMemTable() {
+    // 先确认新 WAL 可写，再切换 MemTable；失败时保留有效的旧 mem_/WAL 配对。
+    const uint64_t number = versions_.NewFileNumber();
+    std::unique_ptr<log::Writer> writer(new log::Writer(LogFileName(number)));
+    if (!writer->IsOpen()) return Status::IOError("cannot create WAL");
+    imm_ = mem_;
+    mem_ = new MemTable(icmp_);
+    mem_->Ref();
+    delete log_writer_;
+    log_number_ = number;
+    log_writer_ = writer.release();
+    ScheduleCompaction();
+    return Status::OK();
+}
+
+Status DBImpl::Flush() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    auto idle = [this] {
+        // scheduled=false 仍可能在执行 I/O，需同时检查 running 和 imm_。
+        // 谓词 wait 在虚假唤醒后重查状态，不会提前宣告 Flush 完成。
+        return !bg_error_.Ok() || shutting_down_ ||
+               (!bg_running_ && !bg_scheduled_ && imm_ == nullptr);
+    };
+    bg_cv_.wait(lock, idle);
+    if (!bg_error_.Ok()) return bg_error_;
+    if (shutting_down_) return Status::IOError("DB is shutting down");
+    std::unique_ptr<MemTable::Table::Iterator> iter(mem_->NewIterator());
+    iter->SeekToFirst();
+    const bool nonempty = iter->Valid();
+    iter.reset();
+    if (nonempty) {
+        Status s = RotateMemTable();
+        if (!s.Ok()) return s;
+        bg_cv_.wait(lock, idle);
+    }
+    if (shutting_down_) return Status::IOError("DB is shutting down");
+    return bg_error_;
 }
 
 // ════════════════════════════════════════════════════════
@@ -1001,9 +1028,15 @@ void DBImpl::BGWork() {
             break;
 
         bg_scheduled_ = false;
+        // 解锁前标记正在运行，避免 Flush 把“任务已领取”误判为“任务已完成”。
+        bg_running_ = true;
         lock.unlock();
-        BackgroundCompaction(); // 无锁执行（内部按需获取释放锁）
+        Status error;
+        try { BackgroundCompaction(); }
+        catch (const std::exception& e) { error = Status::IOError(e.what()); }
         lock.lock();
+        if (!error.Ok()) bg_error_ = error;
+        bg_running_ = false;
         bg_cv_.notify_all(); // 唤醒所有等待 imm_ 清空的写入者
     }
 }
@@ -1011,7 +1044,8 @@ void DBImpl::BGWork() {
 void DBImpl::ScheduleCompaction() {
     if (!bg_scheduled_) {
         bg_scheduled_ = true;
-        bg_cv_.notify_one(); // 唤醒后台线程（只有一个后台线程）
+        // 共用条件变量时 notify_one 可能只唤醒不满足条件的写入者，后台任务就无法启动。
+        bg_cv_.notify_all(); // 还可能有 Flush/写入者等待同一个条件变量
     }
 }
 
@@ -1026,106 +1060,44 @@ void DBImpl::MaybeScheduleCompaction() {
 }
 
 void DBImpl::BackgroundCompaction() {
-    // ════════════════════════════════════════════════════
-    // Phase 1: Minor Compaction（imm_ → Level 0 SSTable）
-    // ════════════════════════════════════════════════════
-    mutex_.lock();
-
-    if (imm_ != nullptr) {
-        // 在锁内预分配文件号，避免与写入者的 NewFileNumber 并发
-        MemTable* imm_to_flush = imm_;
-        imm_to_flush->Ref(); // 持有引用，防止被提前释放
-        uint64_t file_number = versions_.NewFileNumber();
-        mutex_.unlock();
-
-        // ── I/O 阶段（无锁，写入者可并发写 mem_）──────────────
+    // unique_lock 保证异常时释放锁；BGWork 记录错误并唤醒等待者，避免死锁。
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (imm_ != nullptr && bg_error_.Ok()) {
+        MemTable* to_flush = imm_;
+        uint64_t number = versions_.NewFileNumber();
+        lock.unlock();
         VersionEdit edit;
-        std::string smallest_key, largest_key;
-        uint64_t    file_size = 0;
-        Status s = WriteLevel0Table(imm_to_flush, &edit, file_number, &smallest_key, &largest_key,
-                                    &file_size);
-        imm_to_flush->Unref(); // 释放我们持有的引用
-
-        // ── 重新获锁，安装结果 ─────────────────────────────────
-        mutex_.lock();
-        if (s.Ok()) {
-            if (file_size > 0 && !smallest_key.empty()) {
-                edit.AddFile(0, file_number, file_size, smallest_key, largest_key);
-                edit.SetLogNumber(log_number_);
-                s = versions_.LogAndApply(&edit);
-            } else {
-                // imm_ 为空，清理 ghost 文件
-                std::string ghost = TableFileName(file_number);
-                if (fs::exists(ghost))
-                    fs::remove(ghost);
+        std::string smallest, largest;
+        uint64_t size = 0;
+        Status s = WriteLevel0Table(to_flush, &edit, number, &smallest, &largest, &size);
+        lock.lock();
+        if (s.Ok() && size > 0 && !smallest.empty()) {
+            edit.AddFile(0, number, size, smallest, largest);
+            edit.SetLogNumber(log_number_);
+            s = versions_.LogAndApply(&edit);
+        }
+        if (!s.Ok()) { bg_error_ = s; return; }
+        imm_->Unref();
+        imm_ = nullptr;
+        for (const auto& entry : fs::directory_iterator(dbname_)) {
+            if (entry.path().extension() == ".log") {
+                const uint64_t n = std::stoull(entry.path().stem().string());
+                if (n < log_number_) fs::remove(entry.path());
             }
         }
-
-        if (s.Ok()) {
-            imm_->Unref();
-            imm_ = nullptr;
-            // 清理已 Flush 的旧 WAL 文件（在锁内快速完成）
-            for (const auto& entry : fs::directory_iterator(dbname_)) {
-                std::string fname = entry.path().filename().string();
-                if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".log") {
-                    try {
-                        uint64_t num = std::stoull(fname);
-                        if (num < log_number_) {
-                            fs::remove(entry.path());
-                        }
-                    } catch (...) {}
-                }
-            }
-        } else {
-            bg_error_ = s;
-        }
-        // notify_all 由 BGWork 在函数返回后统一发送
+        bg_cv_.notify_all();
     }
-
-    mutex_.unlock();
-
-    if (!bg_error_.Ok())
-        return;
-
-    // ════════════════════════════════════════════════════
-    // Phase 2: Major Compaction
-    // ════════════════════════════════════════════════════
-
-    // 在锁内选择需要 Compaction 的文件
-    mutex_.lock();
-    Compaction* c = PickCompaction();
-    mutex_.unlock();
-
-    if (c == nullptr)
-        return;
-
-    // ── I/O 阶段（无锁）────────────────────────────────────────
-    // 多路归并：读输入 SSTable、去重、写输出 SSTable
-    // 注意：DoCompactionWork 内部读 versions_.GetFiles() 是安全的，
-    // 因为只有本后台线程（单线程）调用 InstallCompactionResults 修改 files_。
-    Status s = DoCompactionWork(c);
-
-    // ── 重新获锁，安装结果并清理 ───────────────────────────────
-    mutex_.lock();
-    if (s.Ok()) {
-        s = InstallCompactionResults(c);
+    if (!bg_error_.Ok()) return;
+    std::unique_ptr<Compaction> c(PickCompaction());
+    if (c) {
+        lock.unlock();
+        Status s = DoCompactionWork(c.get());
+        lock.lock();
+        if (s.Ok()) s = InstallCompactionResults(c.get());
+        if (!s.Ok()) { bg_error_ = s; return; }
     }
-    if (s.Ok()) {
-        RemoveObsoleteFiles();
-    }
-    if (!s.Ok()) {
-        bg_error_ = s;
-    }
-    // 如果还有更多 Compaction 工作，继续调度
-    if (bg_error_.Ok()) {
-        int level = 0;
-        if (imm_ != nullptr || NeedsCompaction(&level)) {
-            bg_scheduled_ = true; // BGWork 循环会立即执行下一轮
-        }
-    }
-    mutex_.unlock();
-
-    delete c;
+    RemoveObsoleteFiles();
+    MaybeScheduleCompaction();
 }
 
 // ════════════════════════════════════════════════════════

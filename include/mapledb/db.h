@@ -37,6 +37,9 @@ public:
     // 找到返回 OK，未找到返回 Status::NotFound
     virtual Status Get(const std::string& key, std::string* value) = 0;
 
+    // 将当前 MemTable 刷入 SSTable，并等待已调度的后台合并结束。
+    virtual Status Flush() = 0;
+
     // 创建全局有序迭代器
     // 合并 MemTable + imm_ + 所有层 SSTable
     // 只返回快照可见的最新 kv，过滤 tombstone
