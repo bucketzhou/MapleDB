@@ -18,6 +18,8 @@ endif()
 file(GLOB_RECURSE MAPLEDB_SOURCES "src/*.cpp")
 
 add_library(mapledb STATIC ${MAPLEDB_SOURCES})
+find_package(Threads REQUIRED)
+target_link_libraries(mapledb PUBLIC Threads::Threads)
 
 # TODO：确认构建项目和安装项目时的头文件路径是否正确
 target_include_directories(mapledb
@@ -62,5 +64,6 @@ add_mapledb_test(daily_test_11)
 add_mapledb_test(daily_test_12)
 add_mapledb_test(daily_test_13)
 add_mapledb_test(daily_test_14)
+add_mapledb_test(storage_regression_test)
 add_mapledb_test(benchmark)
 

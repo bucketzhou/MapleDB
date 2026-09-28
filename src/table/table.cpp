@@ -16,6 +16,10 @@
 
 #include <cassert>
 #include <cstring>
+#include <unistd.h>
+#include <memory>
+#include <limits>
+#include <cerrno>
 #include <mutex>
 
 namespace mapledb {
@@ -42,6 +46,33 @@ static uint32_t TblCRC32(const char* data, size_t len) {
     for (size_t i = 0; i < len; i++)
         c = tbl_crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
     return c ^ 0xFFFFFFFFu;
+}
+
+static Status ReadRawBlock(FILE* file, uint64_t file_size, const BlockHandle& handle,
+                           std::unique_ptr<char[]>* result, size_t* size, bool verify_crc) {
+    // 用减法检查边界，避免 offset + size 溢出后错误接受损坏的 BlockHandle。
+    if (handle.offset() > file_size || file_size - handle.offset() < 5 ||
+        handle.size() > file_size - handle.offset() - 5 ||
+        handle.size() > std::numeric_limits<size_t>::max() - 5)
+        return Status::Corruption("invalid block bounds");
+    const size_t n = static_cast<size_t>(handle.size());
+    std::unique_ptr<char[]> buf(new char[n + 5]);
+    size_t done = 0;
+    while (done < n + 5) {
+        // 并发 Get 共享 Table；pread 不移动 FILE 游标，避免 fseek/fread 相互干扰。
+        // 短读继续补齐，EINTR 重试，EOF/错误不能当作完整块交给解码器。
+        const ssize_t count = pread(fileno(file), buf.get() + done, n + 5 - done,
+                                   static_cast<off_t>(handle.offset() + done));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) return Status::IOError("cannot read block");
+        done += static_cast<size_t>(count);
+    }
+    if (buf[n] != 0) return Status::Corruption("unsupported block compression");
+    if (verify_crc && TblCRC32(buf.get(), n + 1) != DecodeFixed32(buf.get() + n + 1))
+        return Status::Corruption("block checksum mismatch");
+    *size = n;
+    *result = std::move(buf);
+    return Status::OK();
 }
 
 // ── Table::Open ──────────────────────────────────────────────
@@ -82,28 +113,14 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     // ② 根据 index_handle 读取 Index Block，常驻内存
     Block*      index_block     = nullptr;
     BlockHandle ih              = footer.index_handle();
-    size_t      block_data_size = static_cast<size_t>(ih.size());
-
-    char* buf = new char[block_data_size];
-    fseek(f, static_cast<long>(ih.offset()), SEEK_SET);
-
-    if (fread(buf, 1, block_data_size, f) != block_data_size) {
-        delete[] buf;
+    size_t block_data_size = 0;
+    std::unique_ptr<char[]> buf;
+    s = ReadRawBlock(f, file_size, ih, &buf, &block_data_size, false);
+    if (!s.Ok()) {
         fclose(f);
-        return Status::IOError("cannot read index block");
+        return s;
     }
-
-    // 跳过 Index Block 的 5 字节物理尾部（type + CRC）
-    char trailer[5];
-    if (fread(trailer, 1, 5, f) != 5) {
-        delete[] buf;
-        fclose(f);
-        return Status::IOError("cannot read index block trailer");
-    }
-    // trailer[0] = compression type（0 = kNoCompression）
-    // trailer[1..4] = CRC32（教学版跳过验证）
-
-    index_block = new Block(buf, block_data_size, true /* owned，析构时 delete[] */);
+    index_block = new Block(buf.release(), block_data_size, true);
 
     // ③ 构建 Rep 并返回 Table 对象
     Rep* rep              = new Rep;
@@ -116,7 +133,8 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
 
     // Day11: 若启用了 block_cache，申请一个唯一 ID 用于区分不同文件的 Block
     rep->cache_id = (options.block_cache != nullptr) ? options.block_cache->NewId() : 0;
-    *table        = new Table(rep);
+    std::unique_ptr<Table> opened(new Table(rep));
+    *table = opened.release();
     return Status::OK();
 }
 
@@ -130,41 +148,6 @@ Table::~Table() {
 }
 
 // ── Table::ReadBlock ──────────────────────────────────────────
-// 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
-
-// Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
-//     *result = nullptr;
-
-//     size_t n   = static_cast<size_t>(handle.size());
-//     char*  buf = new char[n];
-
-//     // 定位到 Block 起始位置并读取 n 字节
-//     fseek(rep_->file, static_cast<long>(handle.offset()), SEEK_SET);
-//     if (fread(buf, 1, n, rep_->file) != n) {
-//         delete[] buf;
-//         return Status::IOError("cannot read data block");
-//     }
-
-//     // 读取并跳过 5 字节物理尾部（type=1B + CRC=4B）
-//     char trailer[5];
-//     if (fread(trailer, 1, 5, rep_->file) != 5) {
-//         delete[] buf;
-//         return Status::IOError("cannot read data block trailer");
-//     }
-//     // 教学版：跳过 CRC 校验，生产代码应在此验证
-
-//     *result = new Block(buf, n, true /* owned */);
-//     return Status::OK();
-// }
-
-// ── Table::ReadBlock ──────────────────────────────────────────
-// 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
-//
-// Day11 新增：若 options_.block_cache != nullptr，先查缓存。
-//   缓存 key   = [cache_id: 8B][block_offset: 8B]
-//   缓存 value = char*（Block 原始字节，由缓存 delete[]）
-//   命中时：从缓存字节构造新 Block（Block 自己 new 一份，拥有所有权）
-//   未命中时：从磁盘读取，同时将原始字节的副本插入缓存
 
 Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     *result = nullptr;
@@ -191,24 +174,11 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         }
     }
 
-    // ── 磁盘读取 ──────────────────────────────────────────
-    size_t n   = static_cast<size_t>(handle.size());
-    char*  buf = new char[n];
-
-    // 定位到 Block 起始位置并读取 n 字节
-    fseek(rep_->file, static_cast<long>(handle.offset()), SEEK_SET);
-    if (fread(buf, 1, n, rep_->file) != n) {
-        delete[] buf;
-        return Status::IOError("cannot read data block");
-    }
-
-    // 读取并跳过 5 字节物理尾部（type=1B + CRC=4B）
-    char trailer[5];
-    if (fread(trailer, 1, 5, rep_->file) != 5) {
-        delete[] buf;
-        return Status::IOError("cannot read data block trailer");
-    }
-    // 教学版：跳过 CRC 校验，生产代码应在此验证
+    size_t n = 0;
+    std::unique_ptr<char[]> raw;
+    Status s = ReadRawBlock(rep_->file, rep_->file_size, handle, &raw, &n, false);
+    if (!s.Ok()) return s;
+    char* buf = raw.release();
 
     // ── Day11: 将原始字节插入 BlockCache ──────────────────
     if (bc != nullptr && rep_->cache_id != 0) {

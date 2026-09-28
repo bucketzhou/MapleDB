@@ -1,0 +1,89 @@
+#include "mapledb/db.h"
+#include "db/dbformat.h"
+#include "db/tablecache.h"
+#include "table/tablebuilder.h"
+#include "util/cache.h"
+
+#include <atomic>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+#include <unistd.h>
+
+using namespace mapledb;
+namespace fs = std::filesystem;
+
+static void Check(bool condition, const char* message) {
+    if (!condition) throw std::runtime_error(message);
+}
+static void OK(const Status& s) {
+    if (!s.Ok()) throw std::runtime_error(s.ToString());
+}
+static std::string Key(int i) {
+    char b[32];
+    snprintf(b, sizeof b, "key%08d", i);
+    return b;
+}
+static std::unique_ptr<DB> Open(const fs::path& path, const Options& opts) {
+    DB* db = nullptr;
+    OK(DB::Open(opts, path.string(), &db));
+    return std::unique_ptr<DB>(db);
+}
+static void CheckGet(DB* db, int key, const std::string& value) {
+    std::string got;
+    OK(db->Get(Key(key), &got));
+    Check(got == value, "incorrect Get value");
+}
+
+static void ConcurrentTableReads(const fs::path& root) {
+    Options opts;
+    opts.block_size = 1024;
+    const auto path = root / "shared-table.ldb";
+    const int n = 1024;
+    {
+        TableBuilder builder(path.string(), opts);
+        for (int i = 0; i < n; ++i)
+            builder.Add(Slice(Key(i)), Slice(std::string(128, 'v') + Key(i)));
+        OK(builder.Finish());
+    }
+    Table* opened = nullptr;
+    OK(Table::Open(path.string(), opts, &opened));
+    std::unique_ptr<Table> table(opened);
+    struct Result { std::string key, value; };
+    std::atomic<bool> good{true};
+    std::vector<std::thread> readers;
+    for (int t = 0; t < 6; ++t) readers.emplace_back([&, t] {
+        for (int j = 0; j < 3000; ++j) {
+            const std::string key = Key((j * 997 + t * 131) % n);
+            Result result;
+            Status s = table->InternalGet(Slice(key), &result,
+                [](void* arg, const Slice& found_key, const Slice& found_value) {
+                    auto* out = static_cast<Result*>(arg);
+                    out->key = found_key.ToString();
+                    out->value = found_value.ToString();
+                });
+            if (!s.Ok() || result.key != key || result.value != std::string(128, 'v') + key)
+                good = false;
+        }
+    });
+    for (auto& reader : readers) reader.join();
+    Check(good.load(), "shared Table concurrent reads returned incorrect bytes");
+}
+
+int main() {
+    const auto root = fs::temp_directory_path() / ("mapledb-regression-" + std::to_string(getpid()));
+    try {
+        fs::create_directories(root);
+        ConcurrentTableReads(root);
+        fs::remove_all(root);
+        std::cout << "storage regression tests passed\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << " (data: " << root << ")\n";
+        return 1;
+    }
+}
