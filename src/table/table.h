@@ -18,9 +18,11 @@
 #include "mapledb/status.h"
 #include "table/block.h" // 包含完整的 Block + Block::Iter 定义
 #include "table/format.h"
+#include "util/cache.h"
 
 #include <cstdio>
 #include <string>
+#include <memory>
 
 namespace mapledb {
 
@@ -74,8 +76,11 @@ public:
 
     // ── ReadBlock：public（供 TwoLevelIterator 使用）──────────
     // 从文件中读取一个 Block（根据 handle 定位）
-    // 返回 Block 对象，调用方负责 delete
-    Status ReadBlock(const BlockHandle& handle, Block** block) const;
+    // 传 cache_handle 时必须通过 ReleaseBlock 释放，不可直接 delete 缓存 Block。
+    // 不传 cache_handle 时不使用缓存，返回的 Block 由调用方 delete。
+    Status ReadBlock(const BlockHandle& handle, Block** block,
+                     Cache::Handle** cache_handle = nullptr) const;
+    void ReleaseBlock(Block* block, Cache::Handle* cache_handle) const;
 
 private:
     // Table 的内部数据
@@ -88,6 +93,7 @@ private:
         const Comparator* cmp;      // ← 新增：存储传入的比较器
         uint64_t          cache_id; // Day 11 新增：BlockCache 分区 ID（0 表示未启用）
     };
+
 
     explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}
 

@@ -149,55 +149,41 @@ Table::~Table() {
 
 // ── Table::ReadBlock ──────────────────────────────────────────
 
-Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
+Status Table::ReadBlock(const BlockHandle& handle, Block** result,
+                        Cache::Handle** cache_handle) const {
     *result = nullptr;
-
-    // ── Day11: 尝试 BlockCache 命中 ───────────────────────
-    Cache* bc = rep_->options.block_cache;
-    if (bc != nullptr && rep_->cache_id != 0) {
-        // 构造 16 字节缓存 key：[cache_id(8B)][offset(8B)]
-        char key_buf[16];
-        EncodeFixed64(key_buf, rep_->cache_id);
-        EncodeFixed64(key_buf + 8, handle.offset());
-        Slice cache_key(key_buf, 16);
-
-        Cache::Handle* ch = bc->Lookup(cache_key);
-        if (ch != nullptr) {
-            // 缓存命中：复制缓存中的原始字节，构造新 Block
-            const char* cached = static_cast<const char*>(bc->Value(ch));
-            size_t      n      = static_cast<size_t>(handle.size());
-            char*       buf    = new char[n];
-            memcpy(buf, cached, n);
-            bc->Release(ch);
-            *result = new Block(buf, n, true /* owned */);
+    if (cache_handle) *cache_handle = nullptr;
+    Cache* bc = cache_handle ? rep_->options.block_cache : nullptr;
+    char key_buf[16];
+    EncodeFixed64(key_buf, rep_->cache_id);
+    EncodeFixed64(key_buf + 8, handle.offset());
+    Slice cache_key(key_buf, sizeof(key_buf));
+    if (bc) {
+        *cache_handle = bc->Lookup(cache_key);
+        if (*cache_handle) {
+            // 复用 Block，保留 handle 到块迭代器销毁；缓存淘汰不会提前释放该块。
+            *result = static_cast<Block*>(bc->Value(*cache_handle));
             return Status::OK();
         }
     }
-
     size_t n = 0;
-    std::unique_ptr<char[]> raw;
-    Status s = ReadRawBlock(rep_->file, rep_->file_size, handle, &raw, &n, false);
+    std::unique_ptr<char[]> buf;
+    Status s = ReadRawBlock(rep_->file, rep_->file_size, handle, &buf, &n, false);
     if (!s.Ok()) return s;
-    char* buf = raw.release();
-
-    // ── Day11: 将原始字节插入 BlockCache ──────────────────
-    if (bc != nullptr && rep_->cache_id != 0) {
-        char key_buf[16];
-        EncodeFixed64(key_buf, rep_->cache_id);
-        EncodeFixed64(key_buf + 8, handle.offset());
-        Slice cache_key(key_buf, 16);
-
-        // 缓存存储独立副本，由缓存 delete[]
-        char* cached_copy = new char[n];
-        memcpy(cached_copy, buf, n);
-        Cache::Handle* ch = bc->Insert(cache_key, cached_copy, n, [](const Slice&, void* v) {
-            delete[] static_cast<char*>(v);
+    Block* block = new Block(buf.release(), n, true);
+    if (bc) {
+        *cache_handle = bc->Insert(cache_key, block, n, [](const Slice&, void* v) {
+            delete static_cast<Block*>(v);
         });
-        bc->Release(ch); // 释放 Insert 返回的引用
     }
-
-    *result = new Block(buf, n, true /* owned */);
+    *result = block;
     return Status::OK();
+}
+
+void Table::ReleaseBlock(Block* block, Cache::Handle* cache_handle) const {
+    // 有 handle 时缓存拥有 Block；否则调用者拥有。两种所有权只能释放一次。
+    if (cache_handle) rep_->options.block_cache->Release(cache_handle);
+    else delete block;
 }
 
 // ── Table::InternalGet ────────────────────────────────────────
@@ -220,7 +206,8 @@ Status Table::InternalGet(const Slice& key, void* arg,
         if (s.Ok()) {
             // ③ 从文件中读取目标 DataBlock
             Block* data_block = nullptr;
-            s                 = ReadBlock(handle, &data_block);
+            Cache::Handle* cache_handle = nullptr;
+            s = ReadBlock(handle, &data_block, &cache_handle);
 
             if (s.Ok()) {
                 // ④ 在 DataBlock 里 Seek(key)
@@ -232,7 +219,7 @@ Status Table::InternalGet(const Slice& key, void* arg,
                 }
                 s = diter->status();
                 delete diter;
-                delete data_block;
+                ReleaseBlock(data_block, cache_handle);
             }
         }
     }
@@ -251,11 +238,12 @@ Status Table::InternalGet(const Slice& key, void* arg,
 class TwoLevelIterator : public Table::Iterator {
 public:
     TwoLevelIterator(Block::Iter* index_iter, Table* table) :
-        index_iter_(index_iter), data_iter_(nullptr), owned_block_(nullptr), table_(table) {}
+        index_iter_(index_iter), data_iter_(nullptr), cache_handle_(nullptr), owned_block_(nullptr), table_(table) {}
 
     ~TwoLevelIterator() override {
         delete data_iter_;
-        delete owned_block_;
+        table_->ReleaseBlock(owned_block_, cache_handle_);
+        cache_handle_ = nullptr;
         delete index_iter_;
     }
 
@@ -310,7 +298,8 @@ private:
     void InitDataBlock() {
         // 释放旧 DataBlock
         delete data_iter_;
-        delete owned_block_;
+        table_->ReleaseBlock(owned_block_, cache_handle_);
+        cache_handle_ = nullptr;
         data_iter_   = nullptr;
         owned_block_ = nullptr;
 
@@ -329,7 +318,7 @@ private:
 
         // 读取 DataBlock（table_ 是 public ReadBlock）
         Block* block = nullptr;
-        s            = table_->ReadBlock(handle, &block);
+        s = table_->ReadBlock(handle, &block, &cache_handle_);
         if (!s.Ok()) {
             status_ = s;
             return;
@@ -342,10 +331,12 @@ private:
     // 跳过已遍历完的空 DataBlock，推进到下一个有 entry 的位置
     void SkipEmptyDataBlocksForward() {
         while (data_iter_ == nullptr || !data_iter_->Valid()) {
+            if (!status().Ok()) return;
             if (!index_iter_->Valid()) {
                 // Index Block 也遍历完了，停止
                 delete data_iter_;
-                delete owned_block_;
+                table_->ReleaseBlock(owned_block_, cache_handle_);
+                cache_handle_ = nullptr;
                 data_iter_   = nullptr;
                 owned_block_ = nullptr;
                 return;
@@ -359,6 +350,7 @@ private:
 
     Block::Iter* index_iter_;  // Index Block 的迭代器
     Block::Iter* data_iter_;   // 当前 DataBlock 的迭代器（可为 nullptr）
+    Cache::Handle* cache_handle_;
     Block*       owned_block_; // 当前 data_iter_ 对应的 Block（负责生命周期）
     Table*       table_;       // 指向所属 Table，用于读取 DataBlock
     Status       status_;      // 错误状态
