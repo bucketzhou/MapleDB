@@ -68,7 +68,27 @@ add_mapledb_test(daily_test_13)
 add_mapledb_test(daily_test_14)
 add_mapledb_test(storage_regression_test)
 add_mapledb_test(bloom_integration_test)
+
 add_executable(benchmark tests/benchmark.cpp)
 target_link_libraries(benchmark PRIVATE mapledb)
 target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+set(MAPLEDB_LEVELDB_SOURCE_DIR "" CACHE PATH "Pinned LevelDB source for the comparison benchmark")
+if(MAPLEDB_LEVELDB_SOURCE_DIR)
+    set(LEVELDB_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(LEVELDB_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(LEVELDB_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${MAPLEDB_LEVELDB_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/leveldb)
+    # 两个引擎使用相同的异常/RTTI模式；EnvWrapper 适配器也需要 RTTI ABI 一致。
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(leveldb PRIVATE -fexceptions -frtti)
+    endif()
+    add_executable(compare_benchmark benchmarks/compare_benchmark.cpp)
+    target_link_libraries(compare_benchmark PRIVATE mapledb leveldb)
+    target_include_directories(compare_benchmark PRIVATE
+        ${MAPLEDB_LEVELDB_SOURCE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}/leveldb/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(compare_benchmark PRIVATE
+        LEVELDB_PLATFORM_POSIX=1 LEVELDB_HAS_PORT_CONFIG_H=1)
+endif()
