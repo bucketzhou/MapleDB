@@ -20,6 +20,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -48,7 +49,7 @@ struct Timer {
 static void PrintThroughput(const char* name, int n, double elapsed_ms) {
     double elapsed_s = elapsed_ms / 1000.0;
     double ops_per_s = n / elapsed_s;
-    double mb_per_s  = (ops_per_s * (32 + 32)) / (1024.0 * 1024.0); // 假设 key+val 共 64B
+    double mb_per_s  = (ops_per_s * (17 + 17)) / (1024.0 * 1024.0);
     fprintf(stdout, "  %-28s : %8d ops  %8.1f ms  %10.0f ops/s  %.2f MB/s\n", name, n, elapsed_ms,
             ops_per_s, mb_per_s);
 }
@@ -68,6 +69,13 @@ static std::string MakeVal(int i) {
     return buf;
 }
 
+static void RequireOK(const mapledb::Status& s) {
+    if (!s.Ok()) {
+        std::fprintf(stderr, "%s\n", s.ToString().c_str());
+        std::exit(1);
+    }
+}
+
 // ─────────────────────────────────────────────────────────
 // 基准 1: 顺序写入
 // ─────────────────────────────────────────────────────────
@@ -78,12 +86,12 @@ static void BenchSeqWrite(const std::string& dbpath, int N) {
     opts.writer_buffer_size = 4 * 1024 * 1024;   // 4MB
     opts.block_cache        = block_cache.get(); // DB 关闭后自动释放缓存
     mapledb::DB* db         = nullptr;
-    assert(mapledb::DB::Open(opts, dbpath, &db).Ok());
+    RequireOK(mapledb::DB::Open(opts, dbpath, &db));
 
     Timer t;
     t.Start();
     for (int i = 0; i < N; i++) {
-        db->Put(MakeKey(i), MakeVal(i));
+        RequireOK(db->Put(MakeKey(i), MakeVal(i)));
     }
     double elapsed = t.ElapsedMs();
 
@@ -102,7 +110,7 @@ static void BenchRandWrite(const std::string& dbpath, int N) {
     opts.writer_buffer_size = 4 * 1024 * 1024;
     opts.block_cache        = block_cache.get();
     mapledb::DB* db         = nullptr;
-    assert(mapledb::DB::Open(opts, dbpath, &db).Ok());
+    RequireOK(mapledb::DB::Open(opts, dbpath, &db));
 
     std::vector<int> order(N);
     for (int i = 0; i < N; i++)
@@ -113,7 +121,7 @@ static void BenchRandWrite(const std::string& dbpath, int N) {
     Timer t;
     t.Start();
     for (int i : order) {
-        db->Put(MakeKey(i), MakeVal(i));
+        RequireOK(db->Put(MakeKey(i), MakeVal(i)));
     }
     double elapsed = t.ElapsedMs();
 
@@ -134,15 +142,13 @@ static void BenchReads(const std::string& dbpath, int N) {
     opts.writer_buffer_size = 4 * 1024 * 1024;
     opts.block_cache        = block_cache.get();
     mapledb::DB* db         = nullptr;
-    assert(mapledb::DB::Open(opts, dbpath, &db).Ok());
+    RequireOK(mapledb::DB::Open(opts, dbpath, &db));
 
     for (int i = 0; i < N; i++) {
-        db->Put(MakeKey(i), MakeVal(i));
+        RequireOK(db->Put(MakeKey(i), MakeVal(i)));
     }
 
-    // 等待后台 Flush 完成，确保数据在 SSTable 中
-    struct timespec ts = {0, 500 * 1000 * 1000}; // 500ms
-    nanosleep(&ts, nullptr);
+    RequireOK(db->Flush()); // 确保 MemTable 和后台任务均已完成
 
     // ── 顺序读 ──
     {
@@ -150,7 +156,7 @@ static void BenchReads(const std::string& dbpath, int N) {
         t.Start();
         std::string val;
         for (int i = 0; i < N; i++) {
-            db->Get(MakeKey(i), &val);
+            RequireOK(db->Get(MakeKey(i), &val));
         }
         double elapsed = t.ElapsedMs();
         PrintThroughput("Sequential Read", N, elapsed);
@@ -168,7 +174,7 @@ static void BenchReads(const std::string& dbpath, int N) {
         t.Start();
         std::string val;
         for (int i : order) {
-            db->Get(MakeKey(i), &val);
+            RequireOK(db->Get(MakeKey(i), &val));
         }
         double elapsed = t.ElapsedMs();
         PrintThroughput("Random  Read", N, elapsed);
@@ -186,7 +192,7 @@ static void BenchSeqScan(const std::string& dbpath, int N) {
     mapledb::Options                opts;
     opts.block_cache = block_cache.get();
     mapledb::DB* db  = nullptr;
-    assert(mapledb::DB::Open(opts, dbpath, &db).Ok());
+    RequireOK(mapledb::DB::Open(opts, dbpath, &db));
 
     Timer t;
     t.Start();
@@ -197,6 +203,8 @@ static void BenchSeqScan(const std::string& dbpath, int N) {
         (void) it->value();
         count++;
     }
+    RequireOK(it->status());
+    if (count != N) std::exit(1);
     delete it;
     double elapsed = t.ElapsedMs();
 
@@ -218,7 +226,7 @@ int main(int argc, char** argv) {
     }
 
     fprintf(stdout, "=== minidb Day14 性能基准 ===\n");
-    fprintf(stdout, "    key 大小 : ~18 bytes   val 大小 : ~18 bytes\n");
+    fprintf(stdout, "    key 大小 : 17 bytes   val 大小 : 17 bytes\n");
     fprintf(stdout, "    BlockCache : %zu MB / DB\n", kBlockCacheSize / (1024 * 1024));
     fprintf(stdout, "    写入条数 : %d\n\n", N);
 

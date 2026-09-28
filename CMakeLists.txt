@@ -43,6 +43,8 @@ enable_testing()
 function(add_mapledb_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE mapledb)
+    # 旧测试中存在 assert 内执行操作；Release 测试也必须执行这些断言。
+    target_compile_options(${name} PRIVATE -UNDEBUG)
     target_include_directories(${name}
         PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -66,5 +68,7 @@ add_mapledb_test(daily_test_13)
 add_mapledb_test(daily_test_14)
 add_mapledb_test(storage_regression_test)
 add_mapledb_test(bloom_integration_test)
-add_mapledb_test(benchmark)
+add_executable(benchmark tests/benchmark.cpp)
+target_link_libraries(benchmark PRIVATE mapledb)
+target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
