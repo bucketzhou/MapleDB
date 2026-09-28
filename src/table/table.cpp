@@ -16,13 +16,14 @@
 
 #include <cassert>
 #include <cstring>
+#include <mutex>
 
 namespace mapledb {
 
 // ── CRC32（与 Day6 table_builder.cpp 保持一致）─────────────────
 
 static uint32_t tbl_crc_table[256];
-static bool     tbl_crc_init = false;
+static std::once_flag tbl_crc_init;
 
 static void TblInitCRC() {
     for (uint32_t i = 0; i < 256; i++) {
@@ -31,14 +32,12 @@ static void TblInitCRC() {
             c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
         tbl_crc_table[i] = c;
     }
-    tbl_crc_init = true;
 }
 
-// 计算 CRC32（目前仅用于可选的校验，避免 unused 警告）
+// CRC 初始化由 call_once 保护，多个读线程不会观察到部分初始化结果。
 [[maybe_unused]]
 static uint32_t TblCRC32(const char* data, size_t len) {
-    if (!tbl_crc_init)
-        TblInitCRC();
+    std::call_once(tbl_crc_init, TblInitCRC);
     uint32_t c = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; i++)
         c = tbl_crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);

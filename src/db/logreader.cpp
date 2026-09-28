@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <mutex>
 
 namespace mapledb {
 namespace log {
@@ -13,7 +14,8 @@ namespace log {
 // ── CRC32（与 Writer 保持一致的实现）───────────────────────────
 
 static uint32_t crc_table_r[256];
-static bool     crc_table_r_init = false;
+// 不同 DB 可以并发恢复；普通 bool 会让线程读到未填完的 CRC 表。
+static std::once_flag crc_table_r_init;
 
 static void InitCRCTableR() {
     for (uint32_t i = 0; i < 256; i++) {
@@ -23,12 +25,10 @@ static void InitCRCTableR() {
         }
         crc_table_r[i] = c;
     }
-    crc_table_r_init = true;
 }
 
 static uint32_t CRC32R(const char* data, size_t len, uint32_t init = 0xFFFFFFFFu) {
-    if (!crc_table_r_init)
-        InitCRCTableR();
+    std::call_once(crc_table_r_init, InitCRCTableR);
     uint32_t c = init;
     for (size_t i = 0; i < len; i++) {
         c = crc_table_r[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
@@ -41,8 +41,7 @@ static uint32_t ComputeCRCR(uint8_t type, const char* data, size_t n) {
     uint32_t crc       = CRC32R(&type_byte, 1);
     // 反转回中间工作状态继续计算
     uint32_t c = crc ^ 0xFFFFFFFFu;
-    if (!crc_table_r_init)
-        InitCRCTableR();
+    std::call_once(crc_table_r_init, InitCRCTableR);
     for (size_t i = 0; i < n; i++) {
         c = crc_table_r[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
     }

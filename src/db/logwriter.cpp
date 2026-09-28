@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <mutex>
 #include <unistd.h> // ← 添加这行，提供 fsync/fileno
 
 namespace mapledb {
@@ -15,7 +16,8 @@ namespace log {
 
 // 标准 CRC32 查找表（IEEE 802.3 多项式 0xEDB88320）
 static uint32_t crc_table[256];
-static bool     crc_table_init = false;
+// call_once 保证只初始化一次，并保证其他线程能看到完整初始化结果。
+static std::once_flag crc_table_init;
 
 static void InitCRCTable() {
     for (uint32_t i = 0; i < 256; i++) {
@@ -25,12 +27,10 @@ static void InitCRCTable() {
         }
         crc_table[i] = c;
     }
-    crc_table_init = true;
 }
 
 static uint32_t CRC32(const char* data, size_t len, uint32_t init_crc = 0xFFFFFFFFu) {
-    if (!crc_table_init)
-        InitCRCTable();
+    std::call_once(crc_table_init, InitCRCTable);
     uint32_t c = init_crc;
     for (size_t i = 0; i < len; i++) {
         c = crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
@@ -77,8 +77,7 @@ uint32_t Writer::ComputeCRC(RecordType type, const char* data, size_t n) const {
     char     type_byte = static_cast<char>(type);
     uint32_t crc       = CRC32(&type_byte, 1);
     // 再对 data 继续计算（保持 CRC 连续性需要传入中间值）
-    if (!crc_table_init)
-        InitCRCTable();
+    std::call_once(crc_table_init, InitCRCTable);
     uint32_t c = crc ^ 0xFFFFFFFFu; // 反转回工作状态
     for (size_t i = 0; i < n; i++) {
         c = crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);

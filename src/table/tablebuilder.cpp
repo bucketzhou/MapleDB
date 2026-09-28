@@ -13,13 +13,15 @@
 
 #include <cassert>
 #include <cstring>
+#include <mutex>
 
 namespace mapledb {
 
 // ── CRC32 实现（与 WAL 保持一致）──────────────────────────────
 
 static uint32_t tb_crc_table[256];
-static bool     tb_crc_init = false;
+// 后台压缩及不同 DB 可以同时构建 Table，不能用无锁 bool 初始化 CRC 表。
+static std::once_flag tb_crc_init;
 
 static void TBInitCRC() {
     for (uint32_t i = 0; i < 256; i++) {
@@ -28,12 +30,10 @@ static void TBInitCRC() {
             c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
         tb_crc_table[i] = c;
     }
-    tb_crc_init = true;
 }
 
 static uint32_t TBCRC32(const char* data, size_t len) {
-    if (!tb_crc_init)
-        TBInitCRC();
+    std::call_once(tb_crc_init, TBInitCRC);
     uint32_t c = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; i++)
         c = tb_crc_table[(c ^ (uint8_t) data[i]) & 0xFF] ^ (c >> 8);
