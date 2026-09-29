@@ -68,6 +68,8 @@ add_mapledb_test(daily_test_13)
 add_mapledb_test(daily_test_14)
 add_mapledb_test(storage_regression_test)
 add_mapledb_test(bloom_integration_test)
+add_mapledb_test(concurrent_rw_test)
+set_tests_properties(concurrent_rw_test PROPERTIES TIMEOUT 120)
 
 add_executable(benchmark tests/benchmark.cpp)
 target_link_libraries(benchmark PRIVATE mapledb)
@@ -91,4 +93,19 @@ if(MAPLEDB_LEVELDB_SOURCE_DIR)
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(compare_benchmark PRIVATE
         LEVELDB_PLATFORM_POSIX=1 LEVELDB_HAS_PORT_CONFIG_H=1)
+    add_executable(concurrent_benchmark benchmarks/concurrent_benchmark.cpp)
+    target_link_libraries(concurrent_benchmark PRIVATE mapledb leveldb)
+    target_include_directories(concurrent_benchmark PRIVATE
+        ${MAPLEDB_LEVELDB_SOURCE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}/leveldb/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(concurrent_benchmark PRIVATE
+        LEVELDB_PLATFORM_POSIX=1 LEVELDB_HAS_PORT_CONFIG_H=1)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME concurrent_benchmark_smoke
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/test_concurrent_benchmark.py
+                --binary=$<TARGET_FILE:concurrent_benchmark>)
+        set_tests_properties(concurrent_benchmark_smoke PROPERTIES TIMEOUT 120)
+    endif()
 endif()
