@@ -70,3 +70,5 @@ Testing/
 
 .clang-format
 .DS_Store
+
+.docs/
