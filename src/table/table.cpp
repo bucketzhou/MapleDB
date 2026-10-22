@@ -299,7 +299,10 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
 
     // ── 磁盘读取 ──────────────────────────────────────────
     size_t n   = static_cast<size_t>(handle.size());
-    char*  buf = new char[n];
+    // 修改：正文和物理尾部连续读取；先防止 32 位 size_t 上的分配长度回绕。
+    if (n > SIZE_MAX - 5)
+        return Status::Corruption("data block size overflow");
+    char*  buf = new char[n + 5];
 
     // 修复：同一个 Table 会被并发 Get 共享，fseek/fread 组合会互相改写文件位置。
     // pread 使用独立偏移，且短读/信号中断时继续读取剩余字节。
@@ -316,17 +319,13 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         }
         return true;
     };
-    if (!read_at(buf, n, handle.offset())) {
+    if (!read_at(buf, n + 5, handle.offset())) {
         delete[] buf;
         return Status::IOError("cannot read data block");
     }
 
-    // 读取并跳过 5 字节物理尾部（type=1B + CRC=4B）
-    char trailer[5];
-    if (!read_at(trailer, sizeof(trailer), handle.offset() + n)) {
-        delete[] buf;
-        return Status::IOError("cannot read data block trailer");
-    }
+    // 尾部已随正文读入，仍完整校验 type+CRC；Block 对外仅暴露正文 n 字节。
+    const char* trailer = buf + n;
     Status s = CheckBlock(buf, n, trailer);
     if (!s.Ok()) {
         delete[] buf;
