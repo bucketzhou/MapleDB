@@ -36,6 +36,14 @@ static std::string       SubDir(const std::string& n) {
     return d;
 }
 
+// 修复：元数据边界和查找参数都要求二进制 InternalKey；普通字符串或 "key@seq:type"
+// 只是可读文本，缺少合法的 8 字节 tag，会被格式校验拒绝或导致比较器断言。
+static std::string EncodeKey(const std::string& key, SequenceNumber sequence = 1) {
+    std::string encoded;
+    AppendInternalKey(&encoded, Slice(key), sequence, kTypeValue);
+    return encoded;
+}
+
 // ════════════════════════════════════════════════════════
 // VersionEdit 测试
 // ════════════════════════════════════════════════════════
@@ -44,14 +52,15 @@ void TestVersionEditEncodeDecode() {
     std::cout << "[TEST] VersionEdit EncodeTo / DecodeFrom...\n";
 
     VersionEdit edit;
-    edit.SetComparatorName(Slice("BytewiseComparator"));
+    // 修复：使用生产 MANIFEST 快照写入的比较器名称，保持格式契约一致。
+    edit.SetComparatorName(Slice("leveldb.BytewiseComparator"));
     edit.SetLogNumber(5);
     edit.SetNextFile(10);
     edit.SetLastSequence(1000);
 
     // 添加两个文件
-    edit.AddFile(0, 3, 4096, "apple@5:1", "cherry@3:1");
-    edit.AddFile(1, 1, 8192, "date@2:1", "grape@1:1");
+    edit.AddFile(0, 3, 4096, EncodeKey("apple", 5), EncodeKey("cherry", 3));
+    edit.AddFile(1, 1, 8192, EncodeKey("date", 2), EncodeKey("grape", 1));
 
     // 删除一个文件
     edit.DeleteFile(1, 7);
@@ -68,7 +77,7 @@ void TestVersionEditEncodeDecode() {
 
     // 验证各字段
     CHECK(decoded.has_comparator());
-    CHECK_STR_EQ(decoded.comparator(), "BytewiseComparator");
+    CHECK_STR_EQ(decoded.comparator(), "leveldb.BytewiseComparator");
 
     CHECK(decoded.has_log_number());
     CHECK_EQ(decoded.log_number(), 5u);
@@ -85,8 +94,8 @@ void TestVersionEditEncodeDecode() {
     CHECK_EQ(nf[0].first, 0); // level 0
     CHECK_EQ(nf[0].second.number, 3u);
     CHECK_EQ(nf[0].second.file_size, 4096u);
-    CHECK_STR_EQ(nf[0].second.smallest, "apple@5:1");
-    CHECK_STR_EQ(nf[0].second.largest, "cherry@3:1");
+    CHECK_STR_EQ(nf[0].second.smallest, EncodeKey("apple", 5));
+    CHECK_STR_EQ(nf[0].second.largest, EncodeKey("cherry", 3));
 
     // 验证删除文件
     const auto& df = decoded.deleted_files();
@@ -137,8 +146,8 @@ void TestVersionSetBasicAddFile() {
     edit.SetLogNumber(1);
     edit.SetNextFile(10);
     edit.SetLastSequence(100);
-    edit.AddFile(0, 3, 4096, "apple", "cherry");
-    edit.AddFile(0, 4, 4096, "date", "grape");
+    edit.AddFile(0, 3, 4096, EncodeKey("apple"), EncodeKey("cherry"));
+    edit.AddFile(0, 4, 4096, EncodeKey("date"), EncodeKey("grape"));
 
     Status s = vs.LogAndApply(&edit);
     CHECK(s.Ok());
@@ -167,8 +176,8 @@ void TestVersionSetDeleteFile() {
         VersionEdit e;
         e.SetLastSequence(10);
         e.SetNextFile(5);
-        e.AddFile(1, 1, 8192, "aaa", "mmm");
-        e.AddFile(1, 2, 8192, "nnn", "zzz");
+        e.AddFile(1, 1, 8192, EncodeKey("aaa"), EncodeKey("mmm"));
+        e.AddFile(1, 2, 8192, EncodeKey("nnn"), EncodeKey("zzz"));
         CHECK(vs.LogAndApply(&e).Ok());
     }
     CHECK_EQ(vs.NumFiles(1), 2);
@@ -228,8 +237,8 @@ void TestVersionSetRecover() {
             e.SetLogNumber(1);
             e.SetNextFile(5);
             e.SetLastSequence(100);
-            e.AddFile(0, 3, 4096, "apple", "cherry");
-            e.AddFile(0, 4, 4096, "date", "grape");
+            e.AddFile(0, 3, 4096, EncodeKey("apple"), EncodeKey("cherry"));
+            e.AddFile(0, 4, 4096, EncodeKey("date"), EncodeKey("grape"));
             CHECK(vs.LogAndApply(&e).Ok());
         }
         // Edit 2: 从 L0 compact 到 L1（删除 L0 文件，添加 L1 文件）
@@ -240,7 +249,7 @@ void TestVersionSetRecover() {
             e.SetLastSequence(200);
             e.DeleteFile(0, 3);
             e.DeleteFile(0, 4);
-            e.AddFile(1, 5, 8192, "apple", "grape");
+            e.AddFile(1, 5, 8192, EncodeKey("apple"), EncodeKey("grape"));
             CHECK(vs.LogAndApply(&e).Ok());
         }
 
@@ -265,13 +274,14 @@ void TestVersionSetRecover() {
         CHECK_EQ(vs2.NumFiles(1), 1);
         CHECK_EQ(vs2.GetFiles(1)[0]->number, 5u);
         CHECK_EQ(vs2.GetFiles(1)[0]->file_size, 8192u);
-        CHECK_STR_EQ(vs2.GetFiles(1)[0]->smallest, "apple");
-        CHECK_STR_EQ(vs2.GetFiles(1)[0]->largest, "grape");
+        CHECK_STR_EQ(vs2.GetFiles(1)[0]->smallest, EncodeKey("apple"));
+        CHECK_STR_EQ(vs2.GetFiles(1)[0]->largest, EncodeKey("grape"));
         CHECK_EQ(vs2.LastSequence(), 200u);
 
         std::cout << "  Recovery: L0=0, L1=1 (file#5) ✓\n";
-        std::cout << "  smallest=" << vs2.GetFiles(1)[0]->smallest
-                  << ", largest=" << vs2.GetFiles(1)[0]->largest << " ✓\n";
+        // 内部键包含二进制 tag，输出时仅展示用户键，避免控制字符混入日志。
+        std::cout << "  smallest=" << ExtractUserKey(vs2.GetFiles(1)[0]->smallest).ToString()
+                  << ", largest=" << ExtractUserKey(vs2.GetFiles(1)[0]->largest).ToString() << " ✓\n";
         std::cout << "  LastSequence=" << vs2.LastSequence() << " ✓\n";
     }
 
@@ -293,12 +303,12 @@ void TestVersionSetMultiLevelRecover() {
         e.SetNextFile(20);
         e.SetLastSequence(5000);
         // L0: 1 个文件
-        e.AddFile(0, 10, 1024, "key_0001", "key_0100");
+        e.AddFile(0, 10, 1024, EncodeKey("key_0001"), EncodeKey("key_0100"));
         // L1: 2 个文件
-        e.AddFile(1, 11, 4096, "key_0101", "key_0200");
-        e.AddFile(1, 12, 4096, "key_0201", "key_0300");
+        e.AddFile(1, 11, 4096, EncodeKey("key_0101"), EncodeKey("key_0200"));
+        e.AddFile(1, 12, 4096, EncodeKey("key_0201"), EncodeKey("key_0300"));
         // L2: 1 个文件
-        e.AddFile(2, 13, 8192, "key_0001", "key_0300");
+        e.AddFile(2, 13, 8192, EncodeKey("key_0001"), EncodeKey("key_0300"));
 
         CHECK(vs.LogAndApply(&e).Ok());
 
@@ -334,8 +344,8 @@ void TestVersionSetFindFile() {
     auto make_file = [&](uint64_t num, const std::string& s, const std::string& l) {
         FileMetaData* f = new FileMetaData();
         f->number       = num;
-        f->smallest     = s;
-        f->largest      = l;
+        f->smallest     = EncodeKey(s);
+        f->largest      = EncodeKey(l);
         files.push_back(f);
     };
 
@@ -345,11 +355,11 @@ void TestVersionSetFindFile() {
     make_file(4, "jjj", "lll");
 
     // FindFile 找第一个 largest >= key 的文件索引
-    CHECK_EQ(VersionSet::FindFile(files, Slice("aaa")), 0); // 在 file#1 里
-    CHECK_EQ(VersionSet::FindFile(files, Slice("ccc")), 0); // 在 file#1 末尾
-    CHECK_EQ(VersionSet::FindFile(files, Slice("ddd")), 1); // 在 file#2 开头
-    CHECK_EQ(VersionSet::FindFile(files, Slice("eee")), 1); // 在 file#2 里
-    CHECK_EQ(VersionSet::FindFile(files, Slice("zzz")), 4); // 超出所有文件
+    CHECK_EQ(VersionSet::FindFile(files, Slice(EncodeKey("aaa"))), 0); // 在 file#1 里
+    CHECK_EQ(VersionSet::FindFile(files, Slice(EncodeKey("ccc"))), 0); // 在 file#1 末尾
+    CHECK_EQ(VersionSet::FindFile(files, Slice(EncodeKey("ddd"))), 1); // 在 file#2 开头
+    CHECK_EQ(VersionSet::FindFile(files, Slice(EncodeKey("eee"))), 1); // 在 file#2 里
+    CHECK_EQ(VersionSet::FindFile(files, Slice(EncodeKey("zzz"))), 4); // 超出所有文件
 
     // 清理
     for (FileMetaData* f : files)
