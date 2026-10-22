@@ -14,6 +14,24 @@
 
 namespace mapledb {
 
+namespace {
+// 修复：打开文件失败也返回可查询 status 的迭代器，防止合并器静默漏掉数据源。
+class ErrorIterator : public Iterator {
+public:
+    explicit ErrorIterator(Status status) : status_(status) {}
+    bool Valid() const override { return false; }
+    void SeekToFirst() override {}
+    void Seek(const Slice&) override {}
+    void Next() override {}
+    const Slice& key() const override { return empty_; }
+    const Slice& value() const override { return empty_; }
+    Status status() const override { return status_; }
+private:
+    Status status_;
+    Slice empty_;
+};
+} // namespace
+
 // ── 缓存条目结构 ─────────────────────────────────────────────────
 
 struct TableAndFile {
@@ -80,7 +98,7 @@ Table::Iterator* TableCache::NewIterator(const FileMetaData* meta, Table** table
     if (!s.Ok()) {
         if (tableptr)
             *tableptr = nullptr;
-        return nullptr;
+        return new ErrorIterator(s);
     }
 
     Table*           table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;

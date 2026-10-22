@@ -354,6 +354,9 @@ public:
 private:
     // 根据 index_iter_ 当前位置加载对应的 DataBlock
     void InitDataBlock() {
+        // 修复：切换块会销毁旧迭代器，必须先保留其解析错误，供最终 status 上报。
+        if (data_iter_ && status_.Ok())
+            status_ = data_iter_->status();
         // 释放旧 DataBlock
         delete data_iter_;
         delete owned_block_;

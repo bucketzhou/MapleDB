@@ -1227,9 +1227,8 @@ Iterator* DBImpl::NewIterator() {
     for (int level = 0; level < kNumLevels; level++) {
         for (const FileMetaData& f : (*files_snapshot)[level]) {
             Table::Iterator* it = table_cache_->NewIterator(&f);
-            if (it != nullptr) {
-                list.push_back(it);
-            }
+            // 修复：失败的数据源也参与 status 汇总，不能当作空文件跳过。
+            list.push_back(it);
         }
     }
 
