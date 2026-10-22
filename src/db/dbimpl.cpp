@@ -384,13 +384,34 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
 // 读路径：Get
 // ════════════════════════════════════════════════════════
 
+std::shared_ptr<DBImpl::FileSnapshot> DBImpl::PinFiles() {
+    auto* snapshot = new FileSnapshot(kNumLevels);
+    for (int level = 0; level < kNumLevels; ++level) {
+        for (const auto* f : versions_.GetFiles(level)) {
+            (*snapshot)[level].push_back(*f);
+            ++pinned_files_[f->number];
+        }
+    }
+    // 修复：仅复制元数据不能阻止后台 unlink，引用必须覆盖锁外读取的整个生命周期。
+    return {snapshot, [this](FileSnapshot* files) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& level : *files) {
+            for (const auto& f : level) {
+                auto it = pinned_files_.find(f.number);
+                if (--it->second == 0)
+                    pinned_files_.erase(it);
+            }
+        }
+        delete files;
+    }};
+}
+
 Status DBImpl::Get(const std::string& key, std::string* value) {
     // ① 在锁内快照所有需要的状态
     SequenceNumber seq;
     MemTable*      mem;
     MemTable*      imm;
-    // 按值复制 FileMetaData，避免 SSTable 读期间被 InstallCompactionResults 释放
-    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
+    std::shared_ptr<FileSnapshot> files_snapshot;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -400,11 +421,7 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
         mem->Ref();
         if (imm)
             imm->Ref();
-        for (int level = 0; level < kNumLevels; level++) {
-            for (const FileMetaData* f : versions_.GetFiles(level)) {
-                files_snapshot[level].push_back(*f); // 按值拷贝
-            }
-        }
+        files_snapshot = PinFiles();
     }
     // 锁已释放，后台 Compaction 可以并发运行
 
@@ -432,13 +449,11 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
         imm->Unref();
 
     // ⑤ 按层查 SSTable（使用快照，无锁）
-    // 教学注意：此处读取 SSTable 文件时，后台可能并发删除旧文件。
-    // 生产实现（LevelDB）通过 Version 引用计数解决此问题。
-    // 在教学场景下，table_cache_ 通常持有打开的文件，可规避大部分竞态。
+    // files_snapshot 固定旧文件，函数任何返回路径都会自动释放引用。
     Slice internal_key = lkey.internal_key();
 
     for (int level = 0; level < kNumLevels; level++) {
-        auto& fvec = files_snapshot[level];
+        auto& fvec = (*files_snapshot)[level];
         if (fvec.empty())
             continue;
 
@@ -973,6 +988,9 @@ Status DBImpl::InstallCompactionResults(Compaction* c) {
 void DBImpl::RemoveObsoleteFiles() {
     // 收集所有"活跃"文件号（VersionSet 当前持有的所有 SSTable）
     std::set<uint64_t> live;
+    // 修复：旧版本可能仍被 Get/迭代器读取，不能只保留当前版本的文件。
+    for (const auto& pinned : pinned_files_)
+        live.insert(pinned.first);
     for (int level = 0; level < kNumLevels; level++) {
         for (const auto* f : versions_.GetFiles(level)) {
             live.insert(f->number);
@@ -1177,7 +1195,7 @@ Iterator* DBImpl::NewIterator() {
     SequenceNumber                         seq;
     MemTable*                              mem;
     MemTable*                              imm;
-    std::vector<std::vector<FileMetaData>> files_snapshot(kNumLevels);
+    std::shared_ptr<FileSnapshot> files_snapshot;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -1187,11 +1205,7 @@ Iterator* DBImpl::NewIterator() {
         mem->Ref();
         if (imm)
             imm->Ref();
-        for (int level = 0; level < kNumLevels; level++) {
-            for (const FileMetaData* f : versions_.GetFiles(level)) {
-                files_snapshot[level].push_back(*f);
-            }
-        }
+        files_snapshot = PinFiles();
     }
     // 锁已释放
 
@@ -1211,7 +1225,7 @@ Iterator* DBImpl::NewIterator() {
 
     // 各层 SSTable（通过 TableCache 获取，无需重复打开文件）
     for (int level = 0; level < kNumLevels; level++) {
-        for (const FileMetaData& f : files_snapshot[level]) {
+        for (const FileMetaData& f : (*files_snapshot)[level]) {
             Table::Iterator* it = table_cache_->NewIterator(&f);
             if (it != nullptr) {
                 list.push_back(it);
@@ -1221,6 +1235,8 @@ Iterator* DBImpl::NewIterator() {
 
     // ③ 多路归并
     Iterator* merge = new MergingIterator(std::move(list), &icmp_);
+    // 子迭代器全部销毁后再解除文件引用，覆盖构建迭代器和后续扫描阶段。
+    merge->RegisterCleanup([files_snapshot]() mutable { files_snapshot.reset(); });
 
     // ④ 用户级迭代器（tombstone 过滤 + 版本去重 + 快照隔离）
     return new DBIter(merge, seq, icmp_);

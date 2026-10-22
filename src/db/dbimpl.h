@@ -30,6 +30,8 @@
 
     #include <condition_variable>
     #include <cstdint>
+    #include <map>
+    #include <memory>
     #include <mutex>
     #include <string>
     #include <thread>
@@ -93,6 +95,10 @@ private:
     Status SearchSST(const FileMetaData* file, const Slice& internal_key, std::string* value,
                      bool* found);
 
+    using FileSnapshot = std::vector<std::vector<FileMetaData>>;
+    // 调用时持有 mutex_；快照同时固定磁盘文件，最后一个读者释放时自动解除引用。
+    std::shared_ptr<FileSnapshot> PinFiles();
+
     // ── 恢复（DB::Open 内调用）───────────────────────────────
 
     // 重放一个 WAL 文件，将数据写回 mem_
@@ -143,6 +149,7 @@ private:
     VersionSet versions_; // SSTable 文件管理
 
     TableCache* table_cache_;
+    std::map<uint64_t, size_t> pinned_files_; // mutex_ 保护；仅记录活跃读者持有的文件。
 
     mutable std::mutex      mutex_;         // 保护所有共享状态
     std::condition_variable bg_cv_;         // 后台线程等待 / 写入者等待
