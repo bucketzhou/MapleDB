@@ -117,11 +117,14 @@ void VersionSet::ApplyEdit(const VersionEdit& edit) {
         files_[level].push_back(meta);
     }
 
-    // 排序
+    // 修复：编码后的 tag 不按原始字节序排序；必须与 FindFile 的内部键比较一致。
+    InternalKeyComparator icmp;
     for (int level = 0; level < kNumLevels; level++) {
         std::sort(
             files_[level].begin(), files_[level].end(),
-            [](const FileMetaData* a, const FileMetaData* b) { return a->smallest < b->smallest; });
+            [&icmp](const FileMetaData* a, const FileMetaData* b) {
+                return icmp.Compare(Slice(a->smallest), Slice(b->smallest)) < 0;
+            });
     }
 }
 
