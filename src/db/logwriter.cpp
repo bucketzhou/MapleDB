@@ -188,12 +188,7 @@ Status Writer::AddRecord(const Slice& slice, bool sync) {
 
     // 可选：强制刷盘（sync 模式，牺牲性能换安全）
     if (sync) {
-        // 修复：stdio 可能直到 Flush 才暴露错误；同步失败也必须返回给调用者。
-        s = Flush();
-        if (!s.Ok())
-            return s;
-        if (fsync(fileno(dest_)) != 0)
-            return status_ = Status::IOError("WAL sync failed");
+        return Sync();
     }
 
     return Status::OK();
@@ -207,6 +202,16 @@ Status Writer::Flush() {
     // 修复：fwrite 成功可能只写入用户态缓冲，必须检查真正刷写的结果。
     if (fflush(dest_) != 0)
         return status_ = Status::IOError("WAL flush failed");
+    return Status::OK();
+}
+
+Status Writer::Sync() {
+    Status s = Flush();
+    if (!s.Ok())
+        return s;
+    // 修复：fflush 只到内核缓冲；元数据提交/同步写必须等待文件同步成功。
+    if (fsync(fileno(dest_)) != 0)
+        return status_ = Status::IOError("WAL sync failed");
     return Status::OK();
 }
 

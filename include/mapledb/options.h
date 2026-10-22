@@ -41,5 +41,7 @@ struct Options {
     // 缓存由调用方创建和拥有（DB 不负责 delete）。
     // 示例：options.block_cache = minidb::NewLRUCache(8 * 1024 * 1024); // 8MB
     Cache* block_cache = nullptr;
+    // 同步写：WAL 内容落盘后才返回成功；默认仍使用原有异步写策略。
+    bool sync_writes = false;
 };
 } // namespace mapledb

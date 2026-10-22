@@ -13,6 +13,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <unistd.h>
 
 namespace mapledb {
 
@@ -235,6 +236,9 @@ Status TableBuilder::Finish() {
     // 修复：尾部刷写或关闭失败时，禁止把这个 SSTable 当作完整文件安装。
     if (fflush(file_) != 0)
         status_ = Status::IOError("SSTable flush failed");
+    // 修复：SSTable 必须先可靠落盘，之后才能在 MANIFEST 中替代旧 WAL/输入文件。
+    if (status_.Ok() && fsync(fileno(file_)) != 0)
+        status_ = Status::IOError("SSTable sync failed");
     if (fclose(file_) != 0 && status_.Ok())
         status_ = Status::IOError("SSTable close failed");
     file_ = nullptr;

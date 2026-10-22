@@ -72,6 +72,11 @@ public:
 
     // 分配一个新的文件编号（每次调用递增）
     uint64_t NewFileNumber() { return next_file_number_.fetch_add(1, std::memory_order_relaxed); }
+    // 崩溃可能留下尚未写入 MANIFEST 的 WAL 编号，恢复时也必须避开这些编号。
+    void MarkFileNumberUsed(uint64_t number) {
+        uint64_t next = next_file_number_.load(std::memory_order_relaxed);
+        while (next <= number && !next_file_number_.compare_exchange_weak(next, number + 1)) {}
+    }
 
     uint64_t LastSequence() const { return last_sequence_; }
     uint64_t LogNumber() const { return log_number_; }

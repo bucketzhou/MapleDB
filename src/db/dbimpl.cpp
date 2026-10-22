@@ -6,6 +6,7 @@
 #include "db/tablecache.h"
 #include "db/writebatch.h"
 #include "util/coding.h"
+#include "util/fileutil.h"
 
 #include <algorithm>
 #include <cassert>
@@ -79,7 +80,11 @@ DBImpl::~DBImpl() {
 
 Status DBImpl::Open() {
     // ① 确保 DB 目录存在
-    fs::create_directories(dbname_);
+    if (!options_.create_if_missing && !fs::exists(dbname_ + "/CURRENT"))
+        return Status::IOError("database does not exist: " + dbname_);
+    Status s = CreateDBDirectory(dbname_);
+    if (!s.Ok())
+        return s;
 
     // 修复：对象内 mutex 无法保护另一个 DB/进程，读取元数据前必须取得目录排他锁。
     db_lock_.fd = open((dbname_ + "/LOCK").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0644);
@@ -89,6 +94,16 @@ Status DBImpl::Open() {
     // ② 判断是新 DB 还是重启恢复
     std::string current_path = dbname_ + "/CURRENT";
     bool        is_new_db    = !fs::exists(current_path);
+
+    // 修复：旧库丢失 CURRENT 是元数据损坏，不能重新初始化并掩盖原有数据。
+    if (is_new_db) {
+        for (const auto& entry : fs::directory_iterator(dbname_)) {
+            const std::string name = entry.path().filename().string();
+            const std::string extension = entry.path().extension().string();
+            if (entry.is_regular_file() && (name.find("MANIFEST-") == 0 || extension == ".log" || extension == ".ldb"))
+                return Status::Corruption("CURRENT missing from existing database: " + dbname_);
+        }
+    }
 
     if (!is_new_db) {
         // ── 重启恢复路径 ─────────────────────────────────────
@@ -108,6 +123,7 @@ Status DBImpl::Open() {
             if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".log") {
                 try {
                     uint64_t num = std::stoull(fname);
+                    versions_.MarkFileNumberUsed(num);
                     if (num >= min_log) {
                         logs_to_recover.push_back(num);
                     }
@@ -148,7 +164,9 @@ Status DBImpl::Open() {
     std::string log_path = LogFileName(log_number_);
     log_writer_          = new log::Writer(log_path);
     // 修复：创建 WAL 失败时不能继续发布其文件号并返回 Open 成功。
-    Status s = log_writer_->Flush();
+    s = log_writer_->Sync();
+    if (s.Ok())
+        s = SyncDirectory(dbname_); // WAL 目录项先于 MANIFEST 中的恢复下界落盘。
     if (!s.Ok())
         return s;
 
@@ -217,8 +235,8 @@ Status DBImpl::Write(WriteBatch* batch) {
     versions_.SetLastSequence(seq + WriteBatchInternal::Count(batch) - 1);
 
     // ③ 写 WAL（持久化保证：先写日志）
-    s = log_writer_->AddRecord(WriteBatchInternal::Contents(batch));
-    if (s.Ok())
+    s = log_writer_->AddRecord(WriteBatchInternal::Contents(batch), options_.sync_writes);
+    if (s.Ok() && !options_.sync_writes)
         s = log_writer_->Flush();
     if (!s.Ok()) {
         // 修复：日志可能只写了一部分；停止后续写入，且不发布失败的数据。
@@ -251,6 +269,16 @@ Status DBImpl::MakeRoomForWrite(std::unique_lock<std::mutex>& lock) {
             continue;          // 被唤醒后重新检查所有条件
         }
 
+        // 修复：新 WAL 的内容/目录项先落盘，再切换内存状态；失败则保留旧 WAL 和 mem_。
+        uint64_t new_log_number = versions_.NewFileNumber();
+        auto* new_log_writer = new log::Writer(LogFileName(new_log_number));
+        Status s = new_log_writer->Sync();
+        if (s.Ok()) s = SyncDirectory(dbname_);
+        if (!s.Ok()) {
+            delete new_log_writer;
+            bg_error_ = s;
+            return s;
+        }
         // mem_ 已满且 imm_ 为空：轮转
         imm_ = mem_;
         mem_ = new MemTable(icmp_);
@@ -258,8 +286,8 @@ Status DBImpl::MakeRoomForWrite(std::unique_lock<std::mutex>& lock) {
 
         // 创建新 WAL
         delete log_writer_;
-        log_number_ = versions_.NewFileNumber();
-        log_writer_ = new log::Writer(LogFileName(log_number_));
+        log_number_ = new_log_number;
+        log_writer_ = new_log_writer;
 
         // 通知后台线程开始 Flush
         ScheduleCompaction();
@@ -381,6 +409,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
     delete iter;
 
     Status s = builder.Finish();
+    if (s.Ok())
+        s = SyncDirectory(dbname_); // 新 SSTable 的目录项也必须先于 MANIFEST 持久化。
     if (!s.Ok())
         return s;
 
@@ -849,6 +879,7 @@ Status DBImpl::DoCompactionWork(Compaction* c) {
                 return Status::OK();
 
             Status s = builder->Finish();
+            if (s.Ok()) s = SyncDirectory(dbname_);
             if (s.Ok() && builder->NumEntries() > 0) {
                 // 获取文件实际大小
                 // 修复：查询输出文件失败时禁止注册错误的文件大小。

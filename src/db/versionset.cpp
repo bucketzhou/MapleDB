@@ -16,6 +16,7 @@
     #include "db/versionset.h"
 
     #include "util/coding.h"
+    #include "util/fileutil.h"
 
     #include <algorithm>
     #include <cassert>
@@ -23,6 +24,7 @@
     #include <filesystem>
     #include <sstream>
     #include <system_error>
+    #include <unistd.h>
 
 namespace mapledb {
 
@@ -44,7 +46,8 @@ static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number
     std::string manifest_base = std::string("MANIFEST-") + numstr;
 
     std::string current_file = CurrentFileName(dbname);
-    FILE*       f            = fopen(current_file.c_str(), "w");
+    std::string temporary = current_file + ".tmp";
+    FILE*       f            = fopen(temporary.c_str(), "w");
     if (!f) {
         return Status::IOError("cannot write CURRENT: " + current_file);
     }
@@ -52,8 +55,15 @@ static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number
     Status s;
     if (fprintf(f, "%s\n", manifest_base.c_str()) < 0)
         s = Status::IOError("cannot write CURRENT: " + current_file);
+    // 修复：先同步临时文件，再原子替换 CURRENT，避免截断原有有效指针。
+    if (s.Ok() && (fflush(f) != 0 || fsync(fileno(f)) != 0))
+        s = Status::IOError("cannot sync CURRENT: " + current_file);
     if (fclose(f) != 0 && s.Ok())
         s = Status::IOError("cannot close CURRENT: " + current_file);
+    if (s.Ok() && rename(temporary.c_str(), current_file.c_str()) != 0)
+        s = Status::IOError("cannot replace CURRENT: " + current_file);
+    if (s.Ok())
+        s = SyncDirectory(dbname);
     return s;
 }
 
@@ -62,7 +72,6 @@ static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number
 VersionSet::VersionSet(const std::string& dbname, const Options& options) :
     dbname_(dbname), options_(options), next_file_number_(2), last_sequence_(0), log_number_(0),
     manifest_file_number_(0), manifest_writer_(nullptr) {
-    fs::create_directories(dbname_);
 }
 
 VersionSet::~VersionSet() {
@@ -134,6 +143,9 @@ Status VersionSet::EnsureManifestOpen() {
     if (manifest_writer_ != nullptr)
         return Status::OK();
 
+    Status s = CreateDBDirectory(dbname_);
+    if (!s.Ok())
+        return s;
     // 分配新文件号给 MANIFEST
     manifest_file_number_     = next_file_number_.fetch_add(1, std::memory_order_relaxed);
     std::string manifest_path = ManifestFileName(dbname_, manifest_file_number_);
@@ -141,8 +153,16 @@ Status VersionSet::EnsureManifestOpen() {
     // 创建新 MANIFEST（wb，覆盖写）
     manifest_writer_ = new log::Writer(manifest_path);
 
-    // 更新 CURRENT
-    return SetCurrentFile(dbname_, manifest_file_number_);
+    // 修复：完整快照及其目录项可靠落盘后，才能让 CURRENT 指向新 MANIFEST。
+    s = WriteSnapshot();
+    if (s.Ok()) s = manifest_writer_->Sync();
+    if (s.Ok()) s = SyncDirectory(dbname_);
+    if (s.Ok()) s = SetCurrentFile(dbname_, manifest_file_number_);
+    if (!s.Ok()) {
+        delete manifest_writer_;
+        manifest_writer_ = nullptr;
+    }
+    return s;
 }
 
 // ── WriteSnapshot ────────────────────────────────────────────
@@ -192,7 +212,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit) {
     if (!s.Ok())
         return s;
 
-    s = manifest_writer_->Flush();
+    s = manifest_writer_->Sync();
     if (!s.Ok())
         return s;
 
@@ -309,7 +329,7 @@ Status VersionSet::Recover() {
     }
     manifest_writer_ = new log::Writer(manifest_path, valid_size);
 
-    return Status::OK();
+    return manifest_writer_->Sync(); // 将恢复时的截断也可靠落盘。
 }
 
 // ── FindFile ─────────────────────────────────────────────────
