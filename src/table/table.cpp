@@ -296,8 +296,8 @@ Status Table::InternalGet(const Slice& key, void* arg,
 
 class TwoLevelIterator : public Table::Iterator {
 public:
-    TwoLevelIterator(Block::Iter* index_iter, Table* table) :
-        index_iter_(index_iter), data_iter_(nullptr), owned_block_(nullptr), table_(table) {}
+    TwoLevelIterator(Block::Iter* index_iter, Table* table, const Comparator* cmp) :
+        index_iter_(index_iter), data_iter_(nullptr), owned_block_(nullptr), table_(table), cmp_(cmp) {}
 
     ~TwoLevelIterator() override {
         delete data_iter_;
@@ -382,7 +382,8 @@ private:
         }
 
         owned_block_ = block;
-        data_iter_   = block->NewIterator(BytewiseComparator());
+        // 修复：同键版本按 sequence 降序存储，不能用原始字节序做 Seek。
+        data_iter_   = block->NewIterator(cmp_);
     }
 
     // 跳过已遍历完的空 DataBlock，推进到下一个有 entry 的位置
@@ -407,14 +408,16 @@ private:
     Block::Iter* data_iter_;   // 当前 DataBlock 的迭代器（可为 nullptr）
     Block*       owned_block_; // 当前 data_iter_ 对应的 Block（负责生命周期）
     Table*       table_;       // 指向所属 Table，用于读取 DataBlock
+    const Comparator* cmp_;   // 与写入文件及 Index Block 使用相同的排序规则。
     Status       status_;      // 错误状态
 };
 
 // ── Table::NewIterator ────────────────────────────────────────
 
 Table::Iterator* Table::NewIterator() {
-    Block::Iter* index_iter = rep_->index_block->NewIterator(BytewiseComparator());
-    return new TwoLevelIterator(index_iter, this);
+    // 修复：索引定位与数据块定位必须使用 Table::Open 传入的同一比较器。
+    Block::Iter* index_iter = rep_->index_block->NewIterator(rep_->cmp);
+    return new TwoLevelIterator(index_iter, this, rep_->cmp);
 }
 
 } // namespace mapledb
