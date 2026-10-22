@@ -53,6 +53,7 @@ public:
     Block& operator=(const Block&) = delete;
 
     size_t size() const { return size_; }
+    Status status() const { return status_; }
 
     // ────────────────────────────────────────────────────
     // Block::Iter
@@ -71,10 +72,10 @@ public:
     class Iter {
     public:
         Iter(const Comparator* cmp, const char* data, uint32_t restart_offset,
-             uint32_t num_restarts) :
+             uint32_t num_restarts, Status status = Status::OK()) :
             cmp_(cmp), data_(data), restart_offset_(restart_offset), num_restarts_(num_restarts),
             current_(restart_offset), // 初始无效
-            restart_index_(num_restarts) {}
+            restart_index_(num_restarts), status_(status) {}
 
         // ── 状态查询 ──────────────────────────────────────
         bool Valid() const { return current_ < restart_offset_; }
@@ -242,7 +243,9 @@ public:
                     return nullptr;
             }
 
-            if (static_cast<size_t>(limit - p) < (*non_shared + *value_length)) {
+            // 修复：两个 uint32 长度相加可能回绕，先逐项扣减再判断，禁止越界解码。
+            size_t remaining = static_cast<size_t>(limit - p);
+            if (*non_shared > remaining || *value_length > remaining - *non_shared) {
                 return nullptr;
             }
             return p;
@@ -316,6 +319,7 @@ private:
     bool        owned_;
     uint32_t    num_restarts_;
     uint32_t    restart_offset_;
+    Status      status_; // 非法块结构必须报告损坏，不能伪装为空块。
 };
 
 } // namespace mapledb

@@ -15,6 +15,7 @@
 #include "util/coding.h"
 
 #include <cassert>
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
@@ -23,28 +24,31 @@ namespace mapledb {
 
 // ── CRC32（与 Day6 table_builder.cpp 保持一致）─────────────────
 
-static uint32_t tbl_crc_table[256];
-static bool     tbl_crc_init = false;
-
-static void TblInitCRC() {
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t c = i;
-        for (int j = 0; j < 8; j++)
-            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-        tbl_crc_table[i] = c;
-    }
-    tbl_crc_init = true;
+static uint32_t TblCRC32(const char* data, size_t len, uint32_t previous = 0) {
+    // 修复：并发读表会同时校验 CRC，局部静态初始化保证查表只构造一次且没有竞争。
+    static const auto table = [] {
+        std::array<uint32_t, 256> result{};
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int j = 0; j < 8; ++j)
+                c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            result[i] = c;
+        }
+        return result;
+    }();
+    uint32_t c = previous ^ 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++)
+        c = table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
 }
 
-// 计算 CRC32（目前仅用于可选的校验，避免 unused 警告）
-[[maybe_unused]]
-static uint32_t TblCRC32(const char* data, size_t len) {
-    if (!tbl_crc_init)
-        TblInitCRC();
-    uint32_t c = 0xFFFFFFFFu;
-    for (size_t i = 0; i < len; i++)
-        c = tbl_crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
-    return c ^ 0xFFFFFFFFu;
+static Status CheckBlock(const char* data, size_t size, const char* trailer) {
+    // 修复：格式与写入端一致，校验 contents + type，损坏数据不能交给查询或合并。
+    if (trailer[0] != 0)
+        return Status::Corruption("unsupported SSTable compression type");
+    if (TblCRC32(trailer, 1, TblCRC32(data, size)) != DecodeFixed32(trailer + 1))
+        return Status::Corruption("SSTable block checksum mismatch");
+    return Status::OK();
 }
 
 // ── Table::Open ──────────────────────────────────────────────
@@ -103,10 +107,20 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
         fclose(f);
         return Status::IOError("cannot read index block trailer");
     }
-    // trailer[0] = compression type（0 = kNoCompression）
-    // trailer[1..4] = CRC32（教学版跳过验证）
+    s = CheckBlock(buf, block_data_size, trailer);
+    if (!s.Ok()) {
+        delete[] buf;
+        fclose(f);
+        return s;
+    }
 
     index_block = new Block(buf, block_data_size, true /* owned，析构时 delete[] */);
+    if (!index_block->status().Ok()) {
+        s = index_block->status();
+        delete index_block;
+        fclose(f);
+        return s;
+    }
 
     // ③ 构建 Rep 并返回 Table 对象
     Rep* rep              = new Rep;
@@ -224,7 +238,17 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         delete[] buf;
         return Status::IOError("cannot read data block trailer");
     }
-    // 教学版：跳过 CRC 校验，生产代码应在此验证
+    Status s = CheckBlock(buf, n, trailer);
+    if (!s.Ok()) {
+        delete[] buf;
+        return s;
+    }
+    Block* block = new Block(buf, n, true /* owned */);
+    if (!block->status().Ok()) {
+        s = block->status();
+        delete block;
+        return s;
+    }
 
     // ── Day11: 将原始字节插入 BlockCache ──────────────────
     if (bc != nullptr && rep_->cache_id != 0) {
@@ -242,7 +266,7 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         bc->Release(ch); // 释放 Insert 返回的引用
     }
 
-    *result = new Block(buf, n, true /* owned */);
+    *result = block;
     return Status::OK();
 }
 
