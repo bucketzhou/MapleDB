@@ -86,10 +86,9 @@ Table::Iterator* TableCache::NewIterator(const FileMetaData* meta, Table** table
     Table*           table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     Table::Iterator* iter  = table->NewIterator();
 
-    // 注意：Release 之后，如果容量充足，缓存仍会保留该 Table。
-    // 若容量不足导致 Table 被驱逐，iter 持有的 Table* 会变为悬空指针。
-    // 教学版假设在 iter 使用期间不会触发驱逐（容量足够）。
-    cache_->Release(handle);
+    // 修复：迭代器仍需访问 Table/Index Block，缓存淘汰时也不能提前释放它们。
+    // 将 handle 交给迭代器，待其析构完成后再归还缓存引用。
+    iter->RegisterCleanup([cache = cache_, handle]() { cache->Release(handle); });
 
     if (tableptr)
         *tableptr = table;

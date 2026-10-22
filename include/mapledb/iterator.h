@@ -16,11 +16,23 @@
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
 
+#include <functional>
+#include <utility>
+#include <vector>
+
 namespace mapledb {
 
 class Iterator {
 public:
-    virtual ~Iterator() = default;
+    virtual ~Iterator() {
+        // 派生迭代器已析构，最后才释放其依赖的缓存引用或文件快照。
+        for (auto it = cleanups_.rbegin(); it != cleanups_.rend(); ++it)
+            (*it)();
+    }
+
+    void RegisterCleanup(std::function<void()> cleanup) {
+        cleanups_.push_back(std::move(cleanup));
+    }
 
     // 当前位置是否有效（指向一个真实的 kv）
     virtual bool Valid() const = 0;
@@ -53,6 +65,9 @@ public:
 
 protected:
     Iterator() = default;
+
+private:
+    std::vector<std::function<void()>> cleanups_;
 };
 
 } // namespace mapledb

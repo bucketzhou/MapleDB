@@ -40,7 +40,7 @@ public:
 
     // 返回指定文件的迭代器（调用方负责 delete）
     // 若 tableptr != nullptr，则同时通过 *tableptr 返回 Table 指针（弱引用，不转移所有权）
-    // 注意：Table 的生命周期由缓存管理，使用迭代器期间不要 Evict 该文件
+    // 迭代器持有缓存引用，Evict 后 Table 仍存活到迭代器销毁。
     Table::Iterator* NewIterator(const FileMetaData* meta, Table** tableptr = nullptr);
 
     // 在指定 SSTable 中查找 internal_key。
