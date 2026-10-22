@@ -527,6 +527,8 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
     // ⑤ 按层查 SSTable（使用快照，无锁）
     // files_snapshot 固定旧文件，函数任何返回路径都会自动释放引用。
     Slice internal_key = lkey.internal_key();
+    const Slice user_key(key);
+    const Comparator* user_cmp = BytewiseComparator();
 
     for (int level = 0; level < kNumLevels; level++) {
         const auto& fvec = files_snapshot->files[level];
@@ -536,6 +538,11 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
         if (level == 0) {
             // Level 0：文件可能 key 重叠，从新到旧逐个检查
             for (const FileMetaData& f : fvec) {
+                // 修改：先按用户键范围排除无关 SST，避免索引/数据读取及 CRC 校验。
+                // 不能比较带 tag 的原始字节，否则同键不同 sequence 可能被错误跳过。
+                if (user_cmp->Compare(user_key, ExtractUserKey(Slice(f.smallest))) < 0 ||
+                    user_cmp->Compare(user_key, ExtractUserKey(Slice(f.largest))) > 0)
+                    continue;
                 bool found = false;
                 s          = SearchSST(&f, internal_key, value, &found);
                 if (!s.Ok() && !s.IsNotFound())
@@ -552,6 +559,9 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
                     return icmp_.Compare(Slice(f.largest), target) < 0;
                 });
             if (candidate == fvec.end())
+                continue;
+            // 二分仅保证 largest >= internal_key；间隙中的 key 还可能小于 smallest。
+            if (user_cmp->Compare(user_key, ExtractUserKey(Slice(candidate->smallest))) < 0)
                 continue;
 
             bool found = false;
