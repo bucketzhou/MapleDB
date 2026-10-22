@@ -55,7 +55,8 @@ Reader::Reader(const std::string& src_filename, Reporter* reporter, bool checksu
     src_(nullptr), reporter_(reporter), checksum_(checksum), backing_store_(new char[kBlockSize]),
     buffer_(), eof_(false), last_record_offset_(0), end_of_buffer_offset_(0) {
     src_ = fopen(src_filename.c_str(), "rb");
-    // 如果文件不存在，src_ 为 nullptr，ReadRecord 会直接返回 false
+    if (!src_)
+        status_ = Status::IOError("cannot open log: " + src_filename);
 }
 
 Reader::~Reader() {
@@ -65,6 +66,8 @@ Reader::~Reader() {
 }
 
 void Reader::ReportCorruption(size_t bytes, const char* reason) {
+    if (status_.Ok())
+        status_ = Status::Corruption(reason);
     if (reporter_) {
         reporter_->Corruption(bytes, Status::Corruption(reason));
     }
@@ -80,6 +83,14 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
                 // 从文件读一个完整的 Block 到 backing_store_
                 size_t n = fread(backing_store_, 1, kBlockSize, src_);
                 end_of_buffer_offset_ += n;
+                // 修复：短读既可能是 EOF，也可能是 I/O 故障，必须检查 ferror。
+                if (ferror(src_)) {
+                    status_ = Status::IOError("cannot read log");
+                    buffer_ = Slice();
+                    eof_ = true;
+                    return kEof;
+                }
+                eof_ = n < kBlockSize;
                 if (n == 0) {
                     eof_    = true;
                     buffer_ = Slice();
@@ -107,13 +118,12 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
 
         // 校验总长度是否合理
         if (kHeaderSize + length > buffer_.Size()) {
-            // 数据被截断，可能是崩溃时文件写一半
+            // 只有最后一个短块允许未完成尾记录；完整块内的越界长度属于损坏。
             size_t drop = buffer_.Size();
             buffer_     = Slice();
+            if (!eof_ || length > kBlockSize - kHeaderSize)
+                ReportCorruption(drop, "bad record length");
             eof_        = true;
-            if (drop > 0) {
-                ReportCorruption(drop, "truncated record at end of file");
-            }
             return kEof;
         }
 
@@ -155,13 +165,14 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
 // ── ReadRecord：读一条完整逻辑 Record（处理分片拼接）─────────────
 
 bool Reader::ReadRecord(Slice* record, std::string* scratch) {
-    if (!src_)
+    if (!src_ || !status_.Ok())
         return false;
 
     scratch->clear();
     // record->clear();
     *record                   = Slice();
     bool in_fragmented_record = false; // 是否正在拼接分片记录
+    uint64_t fragmented_offset = 0;
 
     while (true) {
         Slice        fragment;
@@ -177,6 +188,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                     // 协议错误：之前有未完成的分片
                     ReportCorruption(scratch->size(), "partial record without end");
                     scratch->clear();
+                    return false;
                 }
                 // 完整记录，直接返回
                 last_record_offset_ = physical_record_offset;
@@ -188,10 +200,12 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                 if (in_fragmented_record) {
                     ReportCorruption(scratch->size(), "partial record without end");
                     scratch->clear();
+                    return false;
                 }
                 // 分片第一段：存入 scratch，等待后续片段
                 scratch->assign(fragment.Data(), fragment.Size());
                 in_fragmented_record = true;
+                fragmented_offset = physical_record_offset;
                 break;
 
             case kMiddleType:
@@ -208,7 +222,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                 } else {
                     scratch->append(fragment.Data(), fragment.Size());
                     // 所有分片拼完了，返回完整记录
-                    last_record_offset_ = physical_record_offset;
+                    last_record_offset_ = fragmented_offset;
                     last_record_end_offset_ = end_of_buffer_offset_ - buffer_.Size();
                     *record             = Slice(*scratch);
                     return true;
@@ -218,7 +232,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
             case kEof:
                 if (in_fragmented_record) {
                     // 文件在分片中间结束，可能是崩溃时写一半
-                    ReportCorruption(scratch->size(), "partial record at end of file");
+                    // 中断写入的未完成尾记录不可见，但不应把完整的先前记录判为损坏。
                     scratch->clear();
                 }
                 return false; // 文件正常结束
@@ -229,12 +243,14 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                     scratch->clear();
                     in_fragmented_record = false;
                 }
-                break; // 跳过损坏的 Record，继续读下一条
+                return false; // 修复：完整记录校验失败必须停止，不能静默跳过继续恢复。
 
             default:
                 ReportCorruption(fragment.Size(), "unknown record type");
                 break;
         }
+        if (!status_.Ok())
+            return false;
     }
 }
 

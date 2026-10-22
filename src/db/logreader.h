@@ -48,6 +48,7 @@ public:
     // 返回 true：成功读到一条完整记录
     // 返回 false：文件结束或遇到不可恢复的错误
     bool ReadRecord(Slice* record, std::string* scratch);
+    Status status() const { return status_; } // EOF 返回 false，错误必须另行检查，不能混为正常结束。
 
     // 当前读取位置（字节偏移，用于调试）
     uint64_t LastRecordOffset() const { return last_record_offset_; }
@@ -70,6 +71,7 @@ private:
     char*     backing_store_;        // 存放当前 Block 数据的缓冲区
     Slice     buffer_;               // 当前 Block 的可读视图
     bool      eof_;                  // 是否已到文件末尾
+    Status    status_;               // 保留第一次打开、读取或格式错误。
     uint64_t  last_record_offset_;   // 上一条完整记录的起始偏移
     uint64_t  last_record_end_offset_ = 0;
     uint64_t  end_of_buffer_offset_; // buffer_ 末尾对应的文件偏移

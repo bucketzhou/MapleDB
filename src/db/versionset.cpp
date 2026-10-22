@@ -291,6 +291,11 @@ Status VersionSet::Recover() {
                NumFiles(0), NumFiles(1));
     }
 
+    // 修复：校验/读取失败不能当作普通尾部截断，否则会破坏原始故障证据。
+    if (!reader.status().Ok())
+        return reader.status();
+    if (record_count == 0)
+        return Status::Corruption("MANIFEST has no complete records");
     printf("[Recover] Total records read: %d\n", record_count); // ← 加这行
 
     // ④ 确保 next_file_number_ 不小于所有已知文件号+1

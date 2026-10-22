@@ -112,6 +112,18 @@ Status DBImpl::Open() {
         if (!s.Ok())
             return s;
 
+        // 修复：目录中的 SSTable 缺失/大小不符时，不能把不完整数据库正常开放。
+        for (int level = 0; level < kNumLevels; ++level) {
+            for (const auto* file : versions_.GetFiles(level)) {
+                std::error_code error;
+                uint64_t size = fs::file_size(TableFileName(file->number), error);
+                if (error)
+                    return Status::IOError("cannot stat referenced SSTable", error.message());
+                if (size != file->file_size)
+                    return Status::Corruption("referenced SSTable size mismatch");
+            }
+        }
+
         // 找到所有需要重放的 WAL 文件
         // （log_number >= versions_.LogNumber() 的都需要重放）
         uint64_t              min_log = versions_.LogNumber();
@@ -121,16 +133,25 @@ Status DBImpl::Open() {
             std::string fname = entry.path().filename().string();
             // 匹配 "000XXX.log" 格式
             if (fname.size() > 4 && fname.substr(fname.size() - 4) == ".log") {
+                const std::string digits = fname.substr(0, fname.size() - 4);
+                if (!std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '9'; }))
+                    continue;
                 try {
-                    uint64_t num = std::stoull(fname);
+                    uint64_t num = std::stoull(digits);
+                    if (num == ~uint64_t{0})
+                        return Status::Corruption("WAL file number overflows allocator");
                     versions_.MarkFileNumberUsed(num);
                     if (num >= min_log) {
                         logs_to_recover.push_back(num);
                     }
-                } catch (...) {}
+                } catch (const std::exception&) {
+                    return Status::Corruption("invalid WAL file number");
+                }
             }
         }
         std::sort(logs_to_recover.begin(), logs_to_recover.end());
+        if (min_log != 0 && !std::binary_search(logs_to_recover.begin(), logs_to_recover.end(), min_log))
+            return Status::Corruption("required WAL file is missing");
 
         // 重放 WAL 文件，恢复未 Flush 的数据
         SequenceNumber max_sequence = versions_.LastSequence();
@@ -196,7 +217,13 @@ Status DBImpl::Open() {
 Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     *dbptr       = nullptr;
     DBImpl* impl = new DBImpl(options, dbname);
-    Status  s    = impl->Open();
+    Status s;
+    try {
+        s = impl->Open();
+    } catch (const fs::filesystem_error& error) {
+        // 文件系统读取失败应遵循 Status 接口，不向调用者抛出未捕获异常。
+        s = Status::IOError("cannot open database", error.what());
+    }
     if (s.Ok()) {
         *dbptr = impl;
     } else {
@@ -675,13 +702,18 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, SequenceNumber* max_sequence)
     while (reader.ReadRecord(&record, &scratch)) {
         // 每条 WAL record 是一个 WriteBatch 的序列化内容
         if (record.Size() < WriteBatchInternal::kHeader) {
-            // record 太短，跳过（可能是损坏的尾部）
-            continue;
+            return Status::Corruption("complete WAL record is too short for WriteBatch");
         }
 
         // 解析 WriteBatch
         WriteBatch batch;
         WriteBatchInternal::SetContents(&batch, record);
+        const int count = WriteBatchInternal::Count(&batch);
+        const SequenceNumber sequence = WriteBatchInternal::Sequence(&batch);
+        // 修复：检查 sequence/count 后再计算末尾序列号，防止零条数下溢或越界。
+        if (count < 0 || sequence > kMaxSequenceNumber ||
+            (count > 0 && (sequence == 0 || static_cast<uint64_t>(count - 1) > kMaxSequenceNumber - sequence)))
+            return Status::Corruption("invalid WAL sequence/count");
 
         // 如果 mem_ 为空，创建一个新的（Recover 时可能需要）
         if (mem_ == nullptr) {
@@ -695,6 +727,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, SequenceNumber* max_sequence)
             return s;
 
         // 更新 max_sequence
+        if (count == 0)
+            continue;
         SequenceNumber last_seq = WriteBatchInternal::Sequence(&batch)
                                   + static_cast<SequenceNumber>(WriteBatchInternal::Count(&batch))
                                   - 1;
@@ -712,7 +746,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, SequenceNumber* max_sequence)
         }
     }
 
-    return Status::OK();
+    return reader.status();
 }
 
 namespace {
