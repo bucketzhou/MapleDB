@@ -455,26 +455,31 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
 // 读路径：Get
 // ════════════════════════════════════════════════════════
 
-std::shared_ptr<DBImpl::FileSnapshot> DBImpl::PinFiles() {
-    auto* snapshot = new FileSnapshot(kNumLevels);
+std::shared_ptr<const DBImpl::FileSnapshot> DBImpl::PinFiles() {
+    if (current_files_ && current_files_->generation == versions_.FileGeneration())
+        return current_files_;
+
+    auto snapshot = std::make_shared<FileSnapshot>();
+    snapshot->generation = versions_.FileGeneration();
     for (int level = 0; level < kNumLevels; ++level) {
-        for (const auto* f : versions_.GetFiles(level)) {
-            (*snapshot)[level].push_back(*f);
-            ++pinned_files_[f->number];
-        }
+        auto& files = snapshot->files[level];
+        files.reserve(versions_.GetFiles(level).size());
+        for (const auto* f : versions_.GetFiles(level))
+            files.push_back(*f);
     }
-    // 修复：仅复制元数据不能阻止后台 unlink，引用必须覆盖锁外读取的整个生命周期。
-    return {snapshot, [this](FileSnapshot* files) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto& level : *files) {
-            for (const auto& f : level) {
-                auto it = pinned_files_.find(f.number);
-                if (--it->second == 0)
-                    pinned_files_.erase(it);
-            }
-        }
-        delete files;
-    }};
+    // 修改：共享后不能在 Get 中排序；L0 的新文件优先顺序在创建版本时确定。
+    auto& l0 = snapshot->files[0];
+    std::sort(l0.begin(), l0.end(), [](const FileMetaData& a, const FileMetaData& b) {
+        return a.number > b.number;
+    });
+    current_files_ = snapshot;
+    // 只在文件版本变化时清理过期登记，避免长期写入留下无读者的弱引用记录。
+    file_snapshots_.erase(
+        std::remove_if(file_snapshots_.begin(), file_snapshots_.end(),
+                       [](const auto& version) { return version.expired(); }),
+        file_snapshots_.end());
+    file_snapshots_.push_back(snapshot);
+    return current_files_;
 }
 
 Status DBImpl::Get(const std::string& key, std::string* value) {
@@ -482,7 +487,7 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
     SequenceNumber seq;
     MemTable*      mem;
     MemTable*      imm;
-    std::shared_ptr<FileSnapshot> files_snapshot;
+    std::shared_ptr<const FileSnapshot> files_snapshot;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -524,15 +529,12 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
     Slice internal_key = lkey.internal_key();
 
     for (int level = 0; level < kNumLevels; level++) {
-        auto& fvec = (*files_snapshot)[level];
+        const auto& fvec = files_snapshot->files[level];
         if (fvec.empty())
             continue;
 
         if (level == 0) {
             // Level 0：文件可能 key 重叠，从新到旧逐个检查
-            std::sort(fvec.begin(), fvec.end(), [](const FileMetaData& a, const FileMetaData& b) {
-                return a.number > b.number; // 降序：新文件优先
-            });
             for (const FileMetaData& f : fvec) {
                 bool found = false;
                 s          = SearchSST(&f, internal_key, value, &found);
@@ -543,17 +545,17 @@ Status DBImpl::Get(const std::string& key, std::string* value) {
             }
         } else {
             // Level 1+：文件有序无重叠，二分定位
-            std::vector<FileMetaData*> ptrs;
-            ptrs.reserve(fvec.size());
-            for (auto& f : fvec)
-                ptrs.push_back(&f);
-
-            int idx = VersionSet::FindFile(ptrs, internal_key);
-            if (idx >= static_cast<int>(ptrs.size()))
+            // 修改：直接在不可变元数据上二分，不为每次 Get 另建指针数组。
+            auto candidate = std::lower_bound(
+                fvec.begin(), fvec.end(), internal_key,
+                [this](const FileMetaData& f, const Slice& target) {
+                    return icmp_.Compare(Slice(f.largest), target) < 0;
+                });
+            if (candidate == fvec.end())
                 continue;
 
             bool found = false;
-            s          = SearchSST(ptrs[idx], internal_key, value, &found);
+            s          = SearchSST(&*candidate, internal_key, value, &found);
             if (!s.Ok())
                 return s;
             if (found)
@@ -1068,9 +1070,19 @@ Status DBImpl::InstallCompactionResults(Compaction* c) {
 void DBImpl::RemoveObsoleteFiles() {
     // 收集所有"活跃"文件号（VersionSet 当前持有的所有 SSTable）
     std::set<uint64_t> live;
-    // 修复：旧版本可能仍被 Get/迭代器读取，不能只保留当前版本的文件。
-    for (const auto& pinned : pinned_files_)
-        live.insert(pinned.first);
+    // 修改：撤下已过期的缓存版本，只有实际读者才能继续固定它的旧 SST。
+    if (current_files_ && current_files_->generation != versions_.FileGeneration())
+        current_files_.reset();
+    for (auto it = file_snapshots_.begin(); it != file_snapshots_.end();) {
+        if (auto snapshot = it->lock()) {
+            for (const auto& level : snapshot->files)
+                for (const auto& file : level)
+                    live.insert(file.number);
+            ++it;
+        } else {
+            it = file_snapshots_.erase(it);
+        }
+    }
     for (int level = 0; level < kNumLevels; level++) {
         for (const auto* f : versions_.GetFiles(level)) {
             live.insert(f->number);
@@ -1275,7 +1287,7 @@ Iterator* DBImpl::NewIterator() {
     SequenceNumber                         seq;
     MemTable*                              mem;
     MemTable*                              imm;
-    std::shared_ptr<FileSnapshot> files_snapshot;
+    std::shared_ptr<const FileSnapshot> files_snapshot;
 
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -1305,7 +1317,7 @@ Iterator* DBImpl::NewIterator() {
 
     // 各层 SSTable（通过 TableCache 获取，无需重复打开文件）
     for (int level = 0; level < kNumLevels; level++) {
-        for (const FileMetaData& f : (*files_snapshot)[level]) {
+        for (const FileMetaData& f : files_snapshot->files[level]) {
             Table::Iterator* it = table_cache_->NewIterator(&f);
             // 修复：失败的数据源也参与 status 汇总，不能当作空文件跳过。
             list.push_back(it);

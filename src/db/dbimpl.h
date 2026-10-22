@@ -95,9 +95,12 @@ private:
     Status SearchSST(const FileMetaData* file, const Slice& internal_key, std::string* value,
                      bool* found);
 
-    using FileSnapshot = std::vector<std::vector<FileMetaData>>;
-    // 调用时持有 mutex_；快照同时固定磁盘文件，最后一个读者释放时自动解除引用。
-    std::shared_ptr<FileSnapshot> PinFiles();
+    struct FileSnapshot {
+        uint64_t generation;
+        std::vector<FileMetaData> files[kNumLevels];
+    };
+    // 调用时持有 mutex_；同一文件版本只复制一次，Get/迭代器共享不可变快照。
+    std::shared_ptr<const FileSnapshot> PinFiles();
 
     // ── 恢复（DB::Open 内调用）───────────────────────────────
 
@@ -156,7 +159,9 @@ private:
     VersionSet versions_; // SSTable 文件管理
 
     TableCache* table_cache_;
-    std::map<uint64_t, size_t> pinned_files_; // mutex_ 保护；仅记录活跃读者持有的文件。
+    std::shared_ptr<const FileSnapshot> current_files_;
+    // 弱引用不延长旧版本寿命；清理 SST 时检查仍被读者持有的所有版本。
+    std::vector<std::weak_ptr<const FileSnapshot>> file_snapshots_; // mutex_ 保护。
 
     mutable std::mutex      mutex_;         // 保护所有共享状态
     std::condition_variable bg_cv_;         // 后台线程等待 / 写入者等待

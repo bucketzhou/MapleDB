@@ -88,6 +88,9 @@ VersionSet::~VersionSet() {
 // ── ApplyEdit ─────────────────────────────────────────────────
 
 void VersionSet::ApplyEdit(const VersionEdit& edit) {
+    // 修改：序列号/WAL 更新不改变 SST 集合，不能使点查快照无效。
+    if (!edit.deleted_files().empty() || !edit.new_files().empty())
+        ++file_generation_;
     // 修复1：next_file_number_ 取"当前值"和"edit值+1"的最大值
     // 不做 "edit.value >= current" 的条件判断，直接更新为更大的
     // Day 12（原子 CAS 更新为更大值）：

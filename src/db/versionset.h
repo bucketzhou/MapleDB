@@ -65,6 +65,9 @@ public:
     // 返回第 level 层的文件数量
     int NumFiles(int level) const { return static_cast<int>(files_[level].size()); }
 
+    // 文件集合变化才推进代数；DBImpl 在同一把锁内据此复用只读文件快照。
+    uint64_t FileGeneration() const { return file_generation_; }
+
     // ── 全局计数器 ────────────────────────────────────────────
 
     // 分配一个新的文件编号（每次调用递增）
@@ -122,6 +125,7 @@ private:
 
     // 各层的文件列表（每层按 smallest key 排序）
     std::vector<FileMetaData*> files_[kNumLevels];
+    uint64_t file_generation_ = 0;
 
     // 全局单调递增的文件编号（每次创建新文件时 +1）
     std::atomic<uint64_t> next_file_number_; // uint64_t → atomic<uint64_t>
