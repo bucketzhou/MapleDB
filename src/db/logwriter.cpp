@@ -112,13 +112,13 @@ Status Writer::EmitPhysicalRecord(RecordType type, const char* ptr, size_t lengt
 
     // 写 Header
     if (fwrite(header, 1, kHeaderSize, dest_) != kHeaderSize) {
-        return Status::IOError("WAL write header failed");
+        return status_ = Status::IOError("WAL write header failed");
     }
 
     // 写 Data
     if (length > 0) {
         if (fwrite(ptr, 1, length, dest_) != length) {
-            return Status::IOError("WAL write data failed");
+            return status_ = Status::IOError("WAL write data failed");
         }
     }
 
@@ -129,8 +129,10 @@ Status Writer::EmitPhysicalRecord(RecordType type, const char* ptr, size_t lengt
 // ── AddRecord：追加一条逻辑 Record（处理跨 Block 分片）──────────
 
 Status Writer::AddRecord(const Slice& slice, bool sync) {
+    if (!status_.Ok())
+        return status_;
     if (!dest_)
-        return Status::IOError("WAL file not open");
+        return status_ = Status::IOError("WAL file not open");
 
     const char* ptr  = slice.Data();
     size_t      left = slice.Size(); // 剩余未写字节数
@@ -147,7 +149,8 @@ Status Writer::AddRecord(const Slice& slice, bool sync) {
             if (block_remaining > 0) {
                 // 用 0 字节填充 trailer
                 static const char kTrailer[kHeaderSize] = {};
-                fwrite(kTrailer, 1, block_remaining, dest_);
+                if (fwrite(kTrailer, 1, block_remaining, dest_) != static_cast<size_t>(block_remaining))
+                    return status_ = Status::IOError("WAL write trailer failed");
             }
             block_offset_ = 0; // 切换到新 Block
         }
@@ -185,17 +188,25 @@ Status Writer::AddRecord(const Slice& slice, bool sync) {
 
     // 可选：强制刷盘（sync 模式，牺牲性能换安全）
     if (sync) {
-        fflush(dest_);
-        fsync(fileno(dest_));
+        // 修复：stdio 可能直到 Flush 才暴露错误；同步失败也必须返回给调用者。
+        s = Flush();
+        if (!s.Ok())
+            return s;
+        if (fsync(fileno(dest_)) != 0)
+            return status_ = Status::IOError("WAL sync failed");
     }
 
     return Status::OK();
 }
 
 Status Writer::Flush() {
+    if (!status_.Ok())
+        return status_;
     if (!dest_)
-        return Status::IOError("WAL file not open");
-    fflush(dest_);
+        return status_ = Status::IOError("WAL file not open");
+    // 修复：fwrite 成功可能只写入用户态缓冲，必须检查真正刷写的结果。
+    if (fflush(dest_) != 0)
+        return status_ = Status::IOError("WAL flush failed");
     return Status::OK();
 }
 

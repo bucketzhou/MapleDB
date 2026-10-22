@@ -134,13 +134,17 @@ Status DBImpl::Open() {
     log_number_          = versions_.NewFileNumber();
     std::string log_path = LogFileName(log_number_);
     log_writer_          = new log::Writer(log_path);
+    // 修复：创建 WAL 失败时不能继续发布其文件号并返回 Open 成功。
+    Status s = log_writer_->Flush();
+    if (!s.Ok())
+        return s;
 
     // ⑤ 更新 VersionSet 里的 log_number
     VersionEdit log_edit;
     // 修复：恢复到 MemTable 的数据尚未全部落盘，不能因创建新 WAL 就跳过旧 WAL。
     // 已有库保留恢复下界，等 Flush 成功后再推进；新库则直接从新 WAL 开始恢复。
     log_edit.SetLogNumber(is_new_db ? log_number_ : versions_.LogNumber());
-    Status s = versions_.LogAndApply(&log_edit);
+    s = versions_.LogAndApply(&log_edit);
     if (!s.Ok())
         return s;
 
@@ -201,11 +205,13 @@ Status DBImpl::Write(WriteBatch* batch) {
 
     // ③ 写 WAL（持久化保证：先写日志）
     s = log_writer_->AddRecord(WriteBatchInternal::Contents(batch));
-    if (!s.Ok())
+    if (s.Ok())
+        s = log_writer_->Flush();
+    if (!s.Ok()) {
+        // 修复：日志可能只写了一部分；停止后续写入，且不发布失败的数据。
+        bg_error_ = s;
         return s;
-    s = log_writer_->Flush();
-    if (!s.Ok())
-        return s;
+    }
 
     // ④ 写 MemTable（内存操作，快速）
     s = WriteBatchInternal::InsertInto(batch, mem_);
@@ -365,12 +371,11 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
     if (!s.Ok())
         return s;
 
-    FILE* f = fopen(path.c_str(), "rb");
-    if (f) {
-        fseek(f, 0, SEEK_END);
-        *file_size = static_cast<uint64_t>(ftell(f));
-        fclose(f);
-    }
+    // 修复：大小查询失败不能伪装成空文件，否则会错误地释放 imm_ 和旧 WAL。
+    std::error_code size_error;
+    *file_size = fs::file_size(path, size_error);
+    if (size_error)
+        return Status::IOError("cannot get SSTable size: " + path, size_error.message());
 
     return Status::OK();
 }
@@ -818,12 +823,13 @@ Status DBImpl::DoCompactionWork(Compaction* c) {
             Status s = builder->Finish();
             if (s.Ok() && builder->NumEntries() > 0) {
                 // 获取文件实际大小
-                uint64_t fsize = 0;
-                FILE*    fp    = fopen(TableFileName(output_number).c_str(), "rb");
-                if (fp) {
-                    fseek(fp, 0, SEEK_END);
-                    fsize = static_cast<uint64_t>(ftell(fp));
-                    fclose(fp);
+                // 修复：查询输出文件失败时禁止注册错误的文件大小。
+                std::error_code size_error;
+                uint64_t fsize = fs::file_size(TableFileName(output_number), size_error);
+                if (size_error) {
+                    delete builder;
+                    builder = nullptr;
+                    return Status::IOError("cannot get compaction output size", size_error.message());
                 }
                 auto* meta      = new FileMetaData();
                 meta->number    = output_number;

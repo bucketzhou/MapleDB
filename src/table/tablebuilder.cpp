@@ -144,7 +144,9 @@ void TableBuilder::Flush() {
     pending_index_entry_ = true;
 
     // 刷新文件缓冲（不一定 fsync，但保证数据在内核缓冲区）
-    fflush(file_);
+    // 修复：缓冲写入的磁盘错误可能延迟到 fflush 才出现，不能丢掉错误。
+    if (fflush(file_) != 0 && status_.Ok())
+        status_ = Status::IOError("SSTable flush failed");
 }
 
 // ── Add：追加一条 kv ──────────────────────────────────────────
@@ -182,7 +184,7 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
 
 Status TableBuilder::Finish() {
     assert(!closed_);
-    closed_ = true;
+    // 完成关闭后才标记 closed；中途失败仍由析构函数关闭文件，避免泄漏句柄。
 
     // 1. Flush 最后一个（可能不满）的 data block
     Flush();
@@ -230,9 +232,13 @@ Status TableBuilder::Finish() {
     }
     offset_ += footer_encoding.size();
 
-    fflush(file_);
-    fclose(file_);
+    // 修复：尾部刷写或关闭失败时，禁止把这个 SSTable 当作完整文件安装。
+    if (fflush(file_) != 0)
+        status_ = Status::IOError("SSTable flush failed");
+    if (fclose(file_) != 0 && status_.Ok())
+        status_ = Status::IOError("SSTable close failed");
     file_ = nullptr;
+    closed_ = true;
 
     return status_;
 }

@@ -45,6 +45,7 @@ private:
 
     FILE*    dest_;         // WAL 文件句柄
     uint32_t block_offset_; // 当前 Block 内已写字节数（0..kBlockSize-1）
+    Status   status_;       // 保留首次写入错误，禁止继续追加到可能残缺的日志。
 
     // CRC32 计算（用 type 做种，这样不同 type 的相同内容 CRC 不同）
     // 我们用标准 CRC32 简化实现（LevelDB 用 crc32c，效果类似）

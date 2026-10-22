@@ -48,9 +48,13 @@ static Status SetCurrentFile(const std::string& dbname, uint64_t manifest_number
     if (!f) {
         return Status::IOError("cannot write CURRENT: " + current_file);
     }
-    fprintf(f, "%s\n", manifest_base.c_str());
-    fclose(f);
-    return Status::OK();
+    // 修复：CURRENT 的缓冲写入与关闭都可能失败，错误必须阻止后续安装。
+    Status s;
+    if (fprintf(f, "%s\n", manifest_base.c_str()) < 0)
+        s = Status::IOError("cannot write CURRENT: " + current_file);
+    if (fclose(f) != 0 && s.Ok())
+        s = Status::IOError("cannot close CURRENT: " + current_file);
+    return s;
 }
 
 // ── VersionSet 构造/析构 ──────────────────────────────────────
