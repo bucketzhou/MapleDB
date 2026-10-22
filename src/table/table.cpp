@@ -265,9 +265,9 @@ Table::~Table() {
 //
 // Day11 新增：若 options_.block_cache != nullptr，先查缓存。
 //   缓存 key   = [cache_id: 8B][file_number: 8B][block_offset: 8B][block_size: 8B]
-//   缓存 value = char*（Block 原始字节，由缓存 delete[]）
-//   命中时：从缓存字节构造新 Block（Block 自己 new 一份，拥有所有权）
-//   未命中时：从磁盘读取，同时将原始字节的副本插入缓存
+//   缓存 value = shared_ptr<const Block>，保存已校验的不可变块
+//   命中时：返回共享数据的 Block 视图，不复制字节或重复校验 restart 数组
+//   未命中时：验证后将原块加入缓存，返回同样持有所有权的视图
 
 Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     *result = nullptr;
@@ -289,13 +289,10 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
 
         Cache::Handle* ch = bc->Lookup(cache_key);
         if (ch != nullptr) {
-            // 缓存命中：复制缓存中的原始字节，构造新 Block
-            const char* cached = static_cast<const char*>(bc->Value(ch));
-            size_t      n      = static_cast<size_t>(handle.size());
-            char*       buf    = new char[n];
-            memcpy(buf, cached, n);
+            // 修改：先让视图持有原块，再释放缓存句柄，避免并发淘汰造成悬空指针。
+            const auto* cached = static_cast<const std::shared_ptr<const Block>*>(bc->Value(ch));
+            *result = new Block(*cached);
             bc->Release(ch);
-            *result = new Block(buf, n, true /* owned */);
             return Status::OK();
         }
     }
@@ -342,7 +339,7 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         return s;
     }
 
-    // ── Day11: 将原始字节插入 BlockCache ──────────────────
+    // ── 将已验证的 Block 插入 BlockCache ──────────────────
     if (bc != nullptr && rep_->cache_id != 0) {
         char key_buf[32];
         EncodeFixed64(key_buf, rep_->cache_id);
@@ -351,13 +348,15 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         EncodeFixed64(key_buf + 24, handle.size());
         Slice cache_key(key_buf, sizeof(key_buf));
 
-        // 缓存存储独立副本，由缓存 delete[]
-        char* cached_copy = new char[n];
-        memcpy(cached_copy, buf, n);
-        Cache::Handle* ch = bc->Insert(cache_key, cached_copy, n, [](const Slice&, void* v) {
-            delete[] static_cast<char*>(v);
+        // 修改：缓存和返回视图共同持有同一份数据，不再为缓存复制整个块。
+        auto shared = std::shared_ptr<const Block>(block);
+        *result = new Block(shared);
+        auto* cached = new std::shared_ptr<const Block>(shared);
+        Cache::Handle* ch = bc->Insert(cache_key, cached, n, [](const Slice&, void* v) {
+            delete static_cast<std::shared_ptr<const Block>*>(v);
         });
         bc->Release(ch); // 释放 Insert 返回的引用
+        return Status::OK();
     }
 
     *result = block;

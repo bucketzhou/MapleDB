@@ -60,6 +60,11 @@ Block::Block(const char* data, size_t size, bool owned) : data_(data), size_(siz
 
 // ── Block 析构函数 ─────────────────────────────────────────────
 
+Block::Block(const std::shared_ptr<const Block>& backing) :
+    data_(backing->data_), size_(backing->size_), owned_(false),
+    num_restarts_(backing->num_restarts_), restart_offset_(backing->restart_offset_),
+    status_(backing->status_), backing_(backing) {}
+
 Block::~Block() {
     if (owned_) {
         delete[] data_;
