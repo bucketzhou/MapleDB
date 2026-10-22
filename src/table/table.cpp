@@ -15,7 +15,9 @@
 #include "util/coding.h"
 
 #include <cassert>
+#include <cerrno>
 #include <cstring>
+#include <unistd.h>
 
 namespace mapledb {
 
@@ -196,16 +198,29 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     size_t n   = static_cast<size_t>(handle.size());
     char*  buf = new char[n];
 
-    // 定位到 Block 起始位置并读取 n 字节
-    fseek(rep_->file, static_cast<long>(handle.offset()), SEEK_SET);
-    if (fread(buf, 1, n, rep_->file) != n) {
+    // 修复：同一个 Table 会被并发 Get 共享，fseek/fread 组合会互相改写文件位置。
+    // pread 使用独立偏移，且短读/信号中断时继续读取剩余字节。
+    auto read_at = [this](char* dst, size_t size, uint64_t offset) {
+        size_t done = 0;
+        while (done < size) {
+            ssize_t count = pread(fileno(rep_->file), dst + done, size - done,
+                                  static_cast<off_t>(offset + done));
+            if (count < 0 && errno == EINTR)
+                continue;
+            if (count <= 0)
+                return false;
+            done += static_cast<size_t>(count);
+        }
+        return true;
+    };
+    if (!read_at(buf, n, handle.offset())) {
         delete[] buf;
         return Status::IOError("cannot read data block");
     }
 
     // 读取并跳过 5 字节物理尾部（type=1B + CRC=4B）
     char trailer[5];
-    if (fread(trailer, 1, 5, rep_->file) != 5) {
+    if (!read_at(trailer, sizeof(trailer), handle.offset() + n)) {
         delete[] buf;
         return Status::IOError("cannot read data block trailer");
     }
