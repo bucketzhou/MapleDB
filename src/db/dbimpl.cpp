@@ -11,12 +11,20 @@
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
+#include <fcntl.h>
 #include <set>
+#include <sys/file.h>
+#include <unistd.h>
 #include <vector>
 
 namespace mapledb {
 
 namespace fs = std::filesystem;
+
+DBImpl::DBLock::~DBLock() {
+    if (fd >= 0)
+        close(fd); // 最后一个句柄关闭时由内核释放 flock，异常进程退出也能释放。
+}
 
 // ── 文件名工具 ─────────────────────────────────────────────────
 
@@ -72,6 +80,11 @@ DBImpl::~DBImpl() {
 Status DBImpl::Open() {
     // ① 确保 DB 目录存在
     fs::create_directories(dbname_);
+
+    // 修复：对象内 mutex 无法保护另一个 DB/进程，读取元数据前必须取得目录排他锁。
+    db_lock_.fd = open((dbname_ + "/LOCK").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+    if (db_lock_.fd < 0 || flock(db_lock_.fd, LOCK_EX | LOCK_NB) != 0)
+        return Status::IOError("database is locked or LOCK cannot be opened: " + dbname_);
 
     // ② 判断是新 DB 还是重启恢复
     std::string current_path = dbname_ + "/CURRENT";

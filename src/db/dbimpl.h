@@ -146,6 +146,13 @@ private:
     log::Writer* log_writer_; // 当前 WAL 写入器
     uint64_t     log_number_; // 当前 WAL 文件号
 
+    struct DBLock {
+        int fd = -1;
+        ~DBLock();
+    };
+    // 声明在 versions_ 前，使锁在 MANIFEST 析构关闭后才释放。
+    DBLock db_lock_;
+
     VersionSet versions_; // SSTable 文件管理
 
     TableCache* table_cache_;
