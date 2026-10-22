@@ -34,7 +34,7 @@ public:
     //              存普通 key 的 SSTable 传 BytewiseComparator()（默认）
     //   table    : 成功时输出新建的 Table 对象（调用方负责 delete）
     static Status Open(const std::string& filename, const Options& options, const Comparator* cmp,
-                       Table** table);
+                       Table** table, uint64_t cache_id = 0, uint64_t file_number = 0);
 
     // 兼容旧接口：不传 cmp 时默认用 BytewiseComparator
     static Status Open(const std::string& filename, const Options& options, Table** table) {
@@ -88,6 +88,7 @@ private:
         std::string       filter; // 打开时验证并加载；只读共享，无过滤器时为空。
         const Comparator* cmp;      // ← 新增：存储传入的比较器
         uint64_t          cache_id; // Day 11 新增：BlockCache 分区 ID（0 表示未启用）
+        uint64_t          file_number; // 同一 TableCache 内不可变 SST 的稳定身份。
     };
 
     explicit Table(Rep* rep) : rep_(rep), file_size_(rep->file_size) {}

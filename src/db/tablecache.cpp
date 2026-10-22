@@ -50,7 +50,8 @@ static void DeleteEntry(const Slice& /*key*/, void* value) {
 TableCache::TableCache(const std::string& dbname, const Options& options, const Comparator* cmp,
                        int entries) :
     dbname_(dbname), options_(options), cmp_(cmp),
-    cache_(NewLRUCache(static_cast<size_t>(entries))) {}
+    cache_(NewLRUCache(static_cast<size_t>(entries))),
+    block_cache_id_(options.block_cache ? options.block_cache->NewId() : 0) {}
 
 TableCache::~TableCache() { delete cache_; }
 
@@ -77,7 +78,8 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Ha
     // 缓存未命中：打开 SSTable 文件
     std::string fname = TableFileName(file_number);
     Table*      table = nullptr;
-    Status      s     = Table::Open(fname, options_, cmp_, &table);
+    // 修改：淘汰后重开同一不可变 SST，仍用同一命名空间和文件号命中旧数据块。
+    Status      s     = Table::Open(fname, options_, cmp_, &table, block_cache_id_, file_number);
     if (!s.Ok())
         return s;
 

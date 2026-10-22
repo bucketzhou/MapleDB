@@ -115,7 +115,7 @@ static Status ReadFilter(FILE* file, const BlockHandle& meta_handle, const Compa
 // ── Table::Open ──────────────────────────────────────────────
 
 Status Table::Open(const std::string& filename, const Options& options, const Comparator* cmp,
-                   Table** table) {
+                   Table** table, uint64_t cache_id, uint64_t file_number) {
     *table = nullptr;
 
     FILE* f = fopen(filename.c_str(), "rb");
@@ -216,8 +216,9 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     rep->filter           = std::move(filter);
     rep->cmp              = cmp; // ← 保存比较器
 
-    // Day11: 若启用了 block_cache，申请一个唯一 ID 用于区分不同文件的 Block
-    rep->cache_id = (options.block_cache != nullptr) ? options.block_cache->NewId() : 0;
+    // 修改：TableCache 提供稳定命名空间；独立打开 Table 时仍分配独有 ID，防止串库。
+    rep->cache_id = options.block_cache ? (cache_id ? cache_id : options.block_cache->NewId()) : 0;
+    rep->file_number = file_number;
     *table        = new Table(rep);
     return Status::OK();
 }
@@ -263,7 +264,7 @@ Table::~Table() {
 // 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
 //
 // Day11 新增：若 options_.block_cache != nullptr，先查缓存。
-//   缓存 key   = [cache_id: 8B][block_offset: 8B][block_size: 8B]
+//   缓存 key   = [cache_id: 8B][file_number: 8B][block_offset: 8B][block_size: 8B]
 //   缓存 value = char*（Block 原始字节，由缓存 delete[]）
 //   命中时：从缓存字节构造新 Block（Block 自己 new 一份，拥有所有权）
 //   未命中时：从磁盘读取，同时将原始字节的副本插入缓存
@@ -279,10 +280,11 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     Cache* bc = rep_->options.block_cache;
     if (bc != nullptr && rep_->cache_id != 0) {
         // 修复：长度也参与缓存标识，防止同偏移的伪造长块命中较短的缓存而越界复制。
-        char key_buf[24];
+        char key_buf[32];
         EncodeFixed64(key_buf, rep_->cache_id);
-        EncodeFixed64(key_buf + 8, handle.offset());
-        EncodeFixed64(key_buf + 16, handle.size());
+        EncodeFixed64(key_buf + 8, rep_->file_number);
+        EncodeFixed64(key_buf + 16, handle.offset());
+        EncodeFixed64(key_buf + 24, handle.size());
         Slice cache_key(key_buf, sizeof(key_buf));
 
         Cache::Handle* ch = bc->Lookup(cache_key);
@@ -342,10 +344,11 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
 
     // ── Day11: 将原始字节插入 BlockCache ──────────────────
     if (bc != nullptr && rep_->cache_id != 0) {
-        char key_buf[24];
+        char key_buf[32];
         EncodeFixed64(key_buf, rep_->cache_id);
-        EncodeFixed64(key_buf + 8, handle.offset());
-        EncodeFixed64(key_buf + 16, handle.size());
+        EncodeFixed64(key_buf + 8, rep_->file_number);
+        EncodeFixed64(key_buf + 16, handle.offset());
+        EncodeFixed64(key_buf + 24, handle.size());
         Slice cache_key(key_buf, sizeof(key_buf));
 
         // 缓存存储独立副本，由缓存 delete[]

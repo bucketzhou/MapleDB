@@ -65,6 +65,7 @@ private:
     Options           options_;
     const Comparator* cmp_;   // 比较器（不拥有）
     Cache*            cache_; // LRU Cache 实例（拥有）
+    uint64_t          block_cache_id_; // 跨 Table 淘汰保留的命名空间，不与其他 DB 混用。
 };
 
 } // namespace mapledb
