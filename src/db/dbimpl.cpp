@@ -137,7 +137,9 @@ Status DBImpl::Open() {
 
     // ⑤ 更新 VersionSet 里的 log_number
     VersionEdit log_edit;
-    log_edit.SetLogNumber(log_number_);
+    // 修复：恢复到 MemTable 的数据尚未全部落盘，不能因创建新 WAL 就跳过旧 WAL。
+    // 已有库保留恢复下界，等 Flush 成功后再推进；新库则直接从新 WAL 开始恢复。
+    log_edit.SetLogNumber(is_new_db ? log_number_ : versions_.LogNumber());
     Status s = versions_.LogAndApply(&log_edit);
     if (!s.Ok())
         return s;
