@@ -395,7 +395,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* /*edit*/, uint64_t f
     std::string path = TableFileName(file_number);
 
     Options      tb_opts = options_;
-    TableBuilder builder(path, tb_opts);
+    // 修复：Flush 的过滤器按 user key 构造，与 Get 的内部键查找保持一致。
+    TableBuilder builder(path, tb_opts, &icmp_);
 
     // 修复：MemTable 没有嵌套 Iterator 类
     // NewIterator() 返回的是 MemTable::Table::Iterator*
@@ -985,7 +986,8 @@ Status DBImpl::DoCompactionWork(Compaction* c) {
                 output_number   = versions_.NewFileNumber();
                 output_smallest = std::string(ik.Data(), ik.Size());
                 output_largest  = output_smallest;
-                builder         = new TableBuilder(TableFileName(output_number), options_);
+                // 合并输出同样使用内部键比较器，重写的 SSTable 才会正确携带过滤器。
+                builder         = new TableBuilder(TableFileName(output_number), options_, &icmp_);
             }
 
             output_largest = std::string(ik.Data(), ik.Size());

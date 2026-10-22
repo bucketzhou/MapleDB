@@ -84,6 +84,9 @@ public:
         // 修复：损坏的内部键必须在比较前拒绝，防止提取 tag 时断言或越界。
         return key.Size() >= 8 && GetValueType(key) <= kTypeValue;
     }
+    // 修复：查询使用的序列号通常不同于写入序列号，只能按 user key 过滤，包含删除标记。
+    Slice FilterKey(const Slice& key) const override { return ExtractUserKey(key); }
+    const char* FilterName() const override { return "filter.mapledb.BloomFilter.userkey.v1"; }
     // 比较两个 InternalKey（以 Slice 形式传入）
     int Compare(const Slice& a, const Slice& b) const override;
 

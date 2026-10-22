@@ -85,6 +85,7 @@ private:
         Block*            index_block; // Index Block 常驻内存，避免每次查询都重读
         Options           options;
         BlockHandle       metaindex_handle;
+        std::string       filter; // 打开时验证并加载；只读共享，无过滤器时为空。
         const Comparator* cmp;      // ← 新增：存储传入的比较器
         uint64_t          cache_id; // Day 11 新增：BlockCache 分区 ID（0 表示未启用）
     };

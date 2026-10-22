@@ -9,6 +9,7 @@
 #include "table/tablebuilder.h"
 
 #include "table/blockbuilder.h"
+#include "util/bloom.h"
 #include "util/coding.h"
 
 #include <cassert>
@@ -50,8 +51,8 @@ struct TableBuilder::BlockBuilderWrapper {
 
 // ── 构造/析构 ─────────────────────────────────────────────────
 
-TableBuilder::TableBuilder(const std::string& filename, const Options& options) :
-    options_(options), file_(nullptr), offset_(0), num_entries_(0), closed_(false),
+TableBuilder::TableBuilder(const std::string& filename, const Options& options, const Comparator* cmp) :
+    options_(options), cmp_(cmp), file_(nullptr), offset_(0), num_entries_(0), closed_(false),
     pending_index_entry_(false) {
     file_ = fopen(filename.c_str(), "wb");
     if (!file_) {
@@ -157,6 +158,15 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
         return;
     assert(!closed_);
 
+    if (options_.bloom_bits_per_key > 0) {
+        // 修复：内部键要先验证再去掉 tag，且 tombstone 也必须加入，不能漏掉删除记录。
+        if (!cmp_->IsValidKey(key)) {
+            status_ = Status::Corruption("invalid key for SSTable filter");
+            return;
+        }
+        filter_keys_.push_back(cmp_->FilterKey(key).ToString());
+    }
+
     // 如果上一个 DataBlock 刚 flush 完，先写 index entry
     // index entry 的 key 用 last_key_（上一个 block 的最后一个 key）
     // 这里简化：直接用 last_key_ 作为分隔 key
@@ -200,13 +210,23 @@ Status TableBuilder::Finish() {
         pending_index_entry_ = false;
     }
 
-    // 2. 写 MetaIndex Block（我们暂不支持 filter，写一个空 block）
-    BlockHandle metaindex_handle;
-    {
-        BlockBuilder meta_index_builder(1);
-        // 空的 MetaIndex Block（无 filter policy）
-        WriteBlock(meta_index_builder.Finish(), &metaindex_handle);
+    // 2. 每张 SSTable 写一个过滤器；通过 MetaIndex 保存位置，旧文件的空 MetaIndex 仍有效。
+    BlockBuilder meta_index_builder(1);
+    if (options_.bloom_bits_per_key > 0) {
+        std::vector<Slice> keys;
+        keys.reserve(filter_keys_.size());
+        for (const auto& key : filter_keys_)
+            keys.emplace_back(key);
+        std::string filter;
+        BloomFilter(options_.bloom_bits_per_key).CreateFilter(keys, &filter);
+        BlockHandle filter_handle;
+        WriteBlock(Slice(filter), &filter_handle); // 同样写入 type + CRC，防止损坏导致假阴性。
+        std::string encoded;
+        filter_handle.EncodeTo(&encoded);
+        meta_index_builder.Add(Slice(cmp_->FilterName()), Slice(encoded));
     }
+    BlockHandle metaindex_handle;
+    WriteBlock(meta_index_builder.Finish(), &metaindex_handle);
     if (!status_.Ok())
         return status_;
 

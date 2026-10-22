@@ -19,6 +19,9 @@ public:
     virtual int Compare(const Slice& a, const Slice& b) const = 0;
     // 磁盘块在调用比较器前验证键格式；普通字节键没有格式限制。
     virtual bool IsValidKey(const Slice&) const { return true; }
+    // 过滤器必须使用与查询一致的键编码；名称区分普通键与去掉 tag 的内部键。
+    virtual Slice FilterKey(const Slice& key) const { return key; }
+    virtual const char* FilterName() const { return "filter.mapledb.BloomFilter.bytes.v1"; }
 };
 
 class BytewiseComparatorImpl : public Comparator {

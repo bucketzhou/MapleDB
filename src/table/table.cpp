@@ -11,6 +11,7 @@
 #include "table/table.h"
 
 #include "mapledb/options.h"
+#include "util/bloom.h"
 #include "util/cache.h"
 #include "util/coding.h"
 
@@ -18,6 +19,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <memory>
 #include <unistd.h>
 
 namespace mapledb {
@@ -48,6 +50,48 @@ static Status CheckBlock(const char* data, size_t size, const char* trailer) {
         return Status::Corruption("unsupported SSTable compression type");
     if (TblCRC32(trailer, 1, TblCRC32(data, size)) != DecodeFixed32(trailer + 1))
         return Status::Corruption("SSTable block checksum mismatch");
+    return Status::OK();
+}
+
+static Status ReadMetadata(FILE* file, const BlockHandle& handle, std::string* contents) {
+    // 调用前已按文件/元数据边界验证 handle；过滤器也必须校验 CRC 后才能用于排除 key。
+    contents->resize(static_cast<size_t>(handle.size()) + 5);
+    if (fseek(file, static_cast<long>(handle.offset()), SEEK_SET) != 0
+        || fread(contents->data(), 1, contents->size(), file) != contents->size())
+        return Status::IOError("cannot read SSTable filter metadata");
+    Status s = CheckBlock(contents->data(), handle.size(), contents->data() + handle.size());
+    contents->resize(handle.size());
+    return s;
+}
+
+static Status ReadFilter(FILE* file, const BlockHandle& meta_handle, const Comparator* cmp,
+                         std::string* filter) {
+    std::string contents;
+    Status s = ReadMetadata(file, meta_handle, &contents);
+    if (!s.Ok())
+        return s;
+    Block meta(contents.data(), contents.size());
+    std::unique_ptr<Block::Iter> it(meta.NewIterator(BytewiseComparator()));
+    const Slice name(cmp->FilterName());
+    it->Seek(name);
+    // 修复：旧文件无该条目或键编码不同，沿用普通查询，不能使用不匹配的过滤器。
+    if (!it->Valid() || it->key() != name)
+        return it->status();
+    Slice encoded = it->value();
+    BlockHandle handle;
+    s = handle.DecodeFrom(&encoded);
+    if (!s.Ok())
+        return s;
+    if (!encoded.Empty() || !handle.ValidWithin(meta_handle.offset())
+        || handle.size() < 2 || handle.size() - 1 > UINT32_MAX / 8)
+        return Status::Corruption("invalid SSTable filter handle");
+    s = ReadMetadata(file, handle, filter);
+    if (!s.Ok())
+        return s;
+    // 拒绝残缺过滤器或非法探测次数，避免把已有 key 误判为不存在。
+    if (filter->size() < 2 || static_cast<uint8_t>(filter->back()) == 0
+        || static_cast<uint8_t>(filter->back()) > 30)
+        return Status::Corruption("invalid SSTable Bloom filter");
     return Status::OK();
 }
 
@@ -135,6 +179,16 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
         return s;
     }
 
+    std::string filter;
+    if (options.bloom_bits_per_key > 0) {
+        s = ReadFilter(f, footer.metaindex_handle(), cmp, &filter);
+        if (!s.Ok()) {
+            delete index_block;
+            fclose(f);
+            return s;
+        }
+    }
+
     // ③ 构建 Rep 并返回 Table 对象
     Rep* rep              = new Rep;
     rep->file             = f;
@@ -142,6 +196,7 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     rep->index_block      = index_block;
     rep->options          = options;
     rep->metaindex_handle = footer.metaindex_handle();
+    rep->filter           = std::move(filter);
     rep->cmp              = cmp; // ← 保存比较器
 
     // Day11: 若启用了 block_cache，申请一个唯一 ID 用于区分不同文件的 Block
@@ -294,6 +349,15 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
 Status Table::InternalGet(const Slice& key, void* arg,
                           void (*handle_result)(void*, const Slice&, const Slice&)) {
     Status s;
+
+    if (!rep_->filter.empty()) {
+        if (!rep_->cmp->IsValidKey(key))
+            return Status::Corruption("invalid key for SSTable filter");
+        // 修复：明确不存在时无需读取数据块；可能存在仍走原来的索引和精确查找。
+        // KeyMayMatch 从磁盘过滤器读取探测次数，不依赖这里的 bits/key 构造参数。
+        if (!BloomFilter(10).KeyMayMatch(rep_->cmp->FilterKey(key), Slice(rep_->filter)))
+            return Status::OK();
+    }
 
     // ① 在 Index Block 里 Seek(key)，找目标 DataBlock 的 handle
     Block::Iter* iiter = rep_->index_block->NewIterator(rep_->cmp);

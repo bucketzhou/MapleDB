@@ -12,9 +12,11 @@
 #include "mapledb/slice.h"
 #include "mapledb/status.h"
 #include "table/format.h"
+#include "util/comparator.h"
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace mapledb {
 
@@ -22,7 +24,9 @@ class TableBuilder {
 public:
     // filename：SSTable 文件路径（会创建/覆盖）
     // options ：DB 配置（block_size 等）
-    TableBuilder(const std::string& filename, const Options& options);
+    // DB 写入内部键时传入 InternalKeyComparator，普通 Table 测试默认使用字节比较器。
+    TableBuilder(const std::string& filename, const Options& options,
+                 const Comparator* cmp = BytewiseComparator());
 
     ~TableBuilder();
 
@@ -62,6 +66,8 @@ private:
 
     // ── 内部状态 ─────────────────────────────────────────────
     Options  options_;
+    const Comparator* cmp_;
+    std::vector<std::string> filter_keys_; // 持有过滤用的键，不能保存指向 MemTable 的临时 Slice。
     FILE*    file_;        // 输出文件句柄
     uint64_t offset_;      // 当前文件写指针（字节偏移）
     Status   status_;      // 最近一次 I/O 操作的状态
