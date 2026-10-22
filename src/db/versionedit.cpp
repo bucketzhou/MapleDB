@@ -5,6 +5,7 @@
 #include "util/coding.h"
 
 #include <cassert>
+#include <limits>
 
 namespace mapledb {
 
@@ -69,7 +70,12 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
     const char* msg   = nullptr;
     uint32_t    tag;
 
-    while (msg == nullptr && GetVarint32(&input, &tag)) {
+    // 修复：残缺的末尾 tag 不能被误认为正常结束，成功必须完整消费输入。
+    while (msg == nullptr && !input.Empty()) {
+        if (!GetVarint32(&input, &tag)) {
+            msg = "tag";
+            break;
+        }
         switch (tag) {
             case kComparator: {
                 Slice str;
@@ -144,6 +150,31 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
 
     if (msg != nullptr) {
         return Status::Corruption("VersionEdit decode: ", msg);
+    }
+    return Validate();
+}
+
+Status VersionEdit::Validate() const {
+    // 修复：CRC 只验证字节完整性；应用变更前还需验证数组下标、内部键和计数范围。
+    const auto valid_number = [](uint64_t n) {
+        return n != 0 && n != std::numeric_limits<uint64_t>::max();
+    };
+    if ((has_comparator_ && comparator_ != "leveldb.BytewiseComparator")
+        || (has_next_file_number_ && !valid_number(next_file_number_))
+        || (has_log_number_ && log_number_ != 0 && !valid_number(log_number_))
+        || (has_last_sequence_ && last_sequence_ > kMaxSequenceNumber))
+        return Status::Corruption("invalid VersionEdit metadata");
+    for (const auto& [level, number] : deleted_files_) {
+        if (level < 0 || level >= kNumLevels || !valid_number(number))
+            return Status::Corruption("invalid deleted file metadata");
+    }
+    InternalKeyComparator cmp;
+    for (const auto& [level, file] : new_files_) {
+        if (level < 0 || level >= kNumLevels || !valid_number(file.number)
+            || file.file_size == 0 || !cmp.IsValidKey(file.smallest)
+            || !cmp.IsValidKey(file.largest)
+            || cmp.Compare(file.smallest, file.largest) > 0)
+            return Status::Corruption("invalid new file metadata");
     }
     return Status::OK();
 }

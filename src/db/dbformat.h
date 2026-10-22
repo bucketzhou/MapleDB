@@ -80,8 +80,12 @@ inline ValueType GetValueType(const Slice& internal_key) {
 // class InternalKeyComparator {
 class InternalKeyComparator : public Comparator {
 public:
+    bool IsValidKey(const Slice& key) const override {
+        // 修复：损坏的内部键必须在比较前拒绝，防止提取 tag 时断言或越界。
+        return key.Size() >= 8 && GetValueType(key) <= kTypeValue;
+    }
     // 比较两个 InternalKey（以 Slice 形式传入）
-    int Compare(const Slice& a, const Slice& b) const;
+    int Compare(const Slice& a, const Slice& b) const override;
 
     // 函数调用运算符重载，方便作为 SkipList 的 Comparator 模板参数
     // 注意：MemTable 里 SkipList 的 key 是 const char*（带 varint 前缀）

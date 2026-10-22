@@ -132,6 +132,10 @@ public:
         void Seek(const Slice& target) {
             if (num_restarts_ == 0)
                 return;
+            if (!cmp_->IsValidKey(target)) {
+                CorruptionError();
+                return;
+            }
 
             // ① 在 restarts[] 上二分：找最后一个 restart_key <= target
             uint32_t left  = 0;
@@ -151,6 +155,10 @@ public:
                     return;
                 }
                 Slice mid_key(key_ptr, non_shared);
+                if (!cmp_->IsValidKey(mid_key)) {
+                    CorruptionError();
+                    return;
+                }
 
                 if (cmp_->Compare(mid_key, target) < 0) {
                     left = mid; // mid 的 key < target，往右找
@@ -277,6 +285,11 @@ public:
             key_buf_.append(key_ptr, non_shared);
             key_   = Slice(key_buf_);
             value_ = Slice(key_ptr + non_shared, value_length);
+            // 修复：CRC 有效也可能含非法内部键，比较或提取 tag 前必须检查格式。
+            if (!cmp_->IsValidKey(key_)) {
+                CorruptionError();
+                return;
+            }
 
             // 更新 restart_index_（当前 entry 属于哪个 restart 区间）
             while (restart_index_ + 1 < num_restarts_

@@ -21,6 +21,9 @@
 
 namespace mapledb {
 
+// 层号校验和文件集合使用同一上界，避免解码接受数组范围以外的层号。
+static constexpr int kNumLevels = 7;
+
 // ════════════════════════════════════════════════════════
 // FileMetaData：描述磁盘上一个 SSTable 文件
 // ════════════════════════════════════════════════════════
@@ -101,6 +104,7 @@ public:
 
     // 从字节串反序列化
     Status DecodeFrom(const Slice& src);
+    Status Validate() const;
 
     // ── Getter（供 VersionSet 读取）──────────────────────────
 

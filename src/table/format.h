@@ -32,6 +32,12 @@ public:
     void     set_offset(uint64_t o) { offset_ = o; }
     void     set_size(uint64_t s) { size_ = s; }
 
+    bool ValidWithin(uint64_t limit) const {
+        // 修复：先做减法校验，避免 offset + size + trailer 的无符号加法溢出。
+        return offset_ <= limit && size_ <= UINT32_MAX && size_ <= limit - offset_
+               && limit - offset_ - size_ >= 5;
+    }
+
     // 编码为 varint64+varint64，追加到 dst
     void EncodeTo(std::string* dst) const {
         PutVarint64(dst, offset_);

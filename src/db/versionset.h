@@ -29,9 +29,6 @@
 
 namespace mapledb {
 
-// LSM 树的层数（Level 0 ~ Level 6，共 7 层）
-static constexpr int kNumLevels = 7;
-
 // ════════════════════════════════════════════════════════
 // VersionSet：所有 SSTable 文件的"目录系统"
 // ════════════════════════════════════════════════════════

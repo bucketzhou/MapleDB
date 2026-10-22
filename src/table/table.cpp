@@ -63,8 +63,16 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     }
 
     // 获取文件大小
-    fseek(f, 0, SEEK_END);
-    uint64_t file_size = static_cast<uint64_t>(ftell(f));
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return Status::IOError("cannot seek SSTable");
+    }
+    const long end = ftell(f);
+    if (end < 0) {
+        fclose(f);
+        return Status::IOError("cannot get SSTable size");
+    }
+    uint64_t file_size = static_cast<uint64_t>(end);
 
     if (file_size < Footer::kEncodedLength) {
         fclose(f);
@@ -73,8 +81,8 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
 
     // ① 读 Footer（末尾固定 48 字节）
     char footer_buf[Footer::kEncodedLength];
-    fseek(f, -static_cast<long>(Footer::kEncodedLength), SEEK_END);
-    if (fread(footer_buf, 1, Footer::kEncodedLength, f) != Footer::kEncodedLength) {
+    if (fseek(f, -static_cast<long>(Footer::kEncodedLength), SEEK_END) != 0
+        || fread(footer_buf, 1, Footer::kEncodedLength, f) != Footer::kEncodedLength) {
         fclose(f);
         return Status::IOError("cannot read SSTable footer");
     }
@@ -89,12 +97,17 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     // ② 根据 index_handle 读取 Index Block，常驻内存
     Block*      index_block     = nullptr;
     BlockHandle ih              = footer.index_handle();
+    // 修复：先限制块范围再分配内存；metaindex 必须位于 index 之前，数据块位于其前。
+    if (!ih.ValidWithin(file_size - Footer::kEncodedLength)
+        || !footer.metaindex_handle().ValidWithin(ih.offset())) {
+        fclose(f);
+        return Status::Corruption("SSTable block handle outside file");
+    }
     size_t      block_data_size = static_cast<size_t>(ih.size());
 
     char* buf = new char[block_data_size];
-    fseek(f, static_cast<long>(ih.offset()), SEEK_SET);
-
-    if (fread(buf, 1, block_data_size, f) != block_data_size) {
+    if (fseek(f, static_cast<long>(ih.offset()), SEEK_SET) != 0
+        || fread(buf, 1, block_data_size, f) != block_data_size) {
         delete[] buf;
         fclose(f);
         return Status::IOError("cannot read index block");
@@ -178,7 +191,7 @@ Table::~Table() {
 // 从文件中读取一个 Block（public，供 TwoLevelIterator 使用）
 //
 // Day11 新增：若 options_.block_cache != nullptr，先查缓存。
-//   缓存 key   = [cache_id: 8B][block_offset: 8B]
+//   缓存 key   = [cache_id: 8B][block_offset: 8B][block_size: 8B]
 //   缓存 value = char*（Block 原始字节，由缓存 delete[]）
 //   命中时：从缓存字节构造新 Block（Block 自己 new 一份，拥有所有权）
 //   未命中时：从磁盘读取，同时将原始字节的副本插入缓存
@@ -186,14 +199,19 @@ Table::~Table() {
 Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     *result = nullptr;
 
+    // 修复：在缓存查询和内存分配之前验证范围，损坏 handle 不能读取元数据区域。
+    if (!handle.ValidWithin(rep_->metaindex_handle.offset()))
+        return Status::Corruption("data block handle outside data region");
+
     // ── Day11: 尝试 BlockCache 命中 ───────────────────────
     Cache* bc = rep_->options.block_cache;
     if (bc != nullptr && rep_->cache_id != 0) {
-        // 构造 16 字节缓存 key：[cache_id(8B)][offset(8B)]
-        char key_buf[16];
+        // 修复：长度也参与缓存标识，防止同偏移的伪造长块命中较短的缓存而越界复制。
+        char key_buf[24];
         EncodeFixed64(key_buf, rep_->cache_id);
         EncodeFixed64(key_buf + 8, handle.offset());
-        Slice cache_key(key_buf, 16);
+        EncodeFixed64(key_buf + 16, handle.size());
+        Slice cache_key(key_buf, sizeof(key_buf));
 
         Cache::Handle* ch = bc->Lookup(cache_key);
         if (ch != nullptr) {
@@ -252,10 +270,11 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
 
     // ── Day11: 将原始字节插入 BlockCache ──────────────────
     if (bc != nullptr && rep_->cache_id != 0) {
-        char key_buf[16];
+        char key_buf[24];
         EncodeFixed64(key_buf, rep_->cache_id);
         EncodeFixed64(key_buf + 8, handle.offset());
-        Slice cache_key(key_buf, 16);
+        EncodeFixed64(key_buf + 16, handle.size());
+        Slice cache_key(key_buf, sizeof(key_buf));
 
         // 缓存存储独立副本，由缓存 delete[]
         char* cached_copy = new char[n];

@@ -22,6 +22,7 @@
     #include <cassert>
     #include <cstdio>
     #include <filesystem>
+    #include <limits>
     #include <sstream>
     #include <system_error>
     #include <unistd.h>
@@ -200,8 +201,12 @@ Status VersionSet::LogAndApply(VersionEdit* edit) {
         edit->SetLogNumber(log_number_);
     }
 
+    // 修复：内存生成的变更也必须验证，非法下标不能写入 MANIFEST 或进入 ApplyEdit。
+    Status s = edit->Validate();
+    if (!s.Ok())
+        return s;
     // 确保 MANIFEST 已打开
-    Status s = EnsureManifestOpen();
+    s = EnsureManifestOpen();
     if (!s.Ok())
         return s;
 
@@ -236,7 +241,14 @@ Status VersionSet::Recover() {
         fclose(cf);
         return Status::Corruption("CURRENT file is empty");
     }
+    // CURRENT 只允许一行文件名，禁止截断读取后接受路径或多余内容。
+    const bool extra_content = fgetc(cf) != EOF;
+    const bool read_error = ferror(cf) != 0;
     fclose(cf);
+    if (read_error)
+        return Status::IOError("cannot read CURRENT");
+    if (extra_content)
+        return Status::Corruption("CURRENT file has extra content");
 
     std::string manifest_name(current_content);
     while (!manifest_name.empty()
@@ -250,8 +262,14 @@ Status VersionSet::Recover() {
     // ② 解析 MANIFEST 文件号
     const std::string prefix = "MANIFEST-";
     if (manifest_name.size() > prefix.size() && manifest_name.substr(0, prefix.size()) == prefix) {
+        const std::string number = manifest_name.substr(prefix.size());
+        if (number.find_first_not_of("0123456789") != std::string::npos)
+            return Status::Corruption("bad MANIFEST file number in CURRENT");
         try {
-            manifest_file_number_ = std::stoull(manifest_name.substr(prefix.size()));
+            manifest_file_number_ = std::stoull(number);
+            if (manifest_file_number_ == 0
+                || manifest_file_number_ == std::numeric_limits<uint64_t>::max())
+                return Status::Corruption("bad MANIFEST file number in CURRENT");
         } catch (...) {
             return Status::Corruption("bad MANIFEST file number in CURRENT");
         }

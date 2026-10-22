@@ -17,6 +17,8 @@ class Comparator {
 public:
     virtual ~Comparator()                                     = default;
     virtual int Compare(const Slice& a, const Slice& b) const = 0;
+    // 磁盘块在调用比较器前验证键格式；普通字节键没有格式限制。
+    virtual bool IsValidKey(const Slice&) const { return true; }
 };
 
 class BytewiseComparatorImpl : public Comparator {
