@@ -300,8 +300,14 @@ Status VersionSet::Recover() {
     if (size_error) {
         return Status::IOError("cannot get MANIFEST size: " + manifest_path, size_error.message());
     }
-    // 用带初始偏移量的构造函数，确保 block_offset_ 正确
-    manifest_writer_ = new log::Writer(manifest_path, manifest_size);
+    // 修复：不能在中断写入留下的残尾后追加，否则新记录下次恢复时也会被丢弃。
+    const uint64_t valid_size = reader.LastRecordEndOffset();
+    if (manifest_size != valid_size) {
+        fs::resize_file(manifest_path, valid_size, size_error);
+        if (size_error)
+            return Status::IOError("cannot truncate MANIFEST tail", size_error.message());
+    }
+    manifest_writer_ = new log::Writer(manifest_path, valid_size);
 
     return Status::OK();
 }

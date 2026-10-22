@@ -180,6 +180,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                 }
                 // 完整记录，直接返回
                 last_record_offset_ = physical_record_offset;
+                last_record_end_offset_ = end_of_buffer_offset_ - buffer_.Size();
                 *record             = fragment;
                 return true;
 
@@ -208,6 +209,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
                     scratch->append(fragment.Data(), fragment.Size());
                     // 所有分片拼完了，返回完整记录
                     last_record_offset_ = physical_record_offset;
+                    last_record_end_offset_ = end_of_buffer_offset_ - buffer_.Size();
                     *record             = Slice(*scratch);
                     return true;
                 }

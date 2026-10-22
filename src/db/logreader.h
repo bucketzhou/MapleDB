@@ -51,6 +51,8 @@ public:
 
     // 当前读取位置（字节偏移，用于调试）
     uint64_t LastRecordOffset() const { return last_record_offset_; }
+    // 最后一条完整逻辑记录的结束位置；恢复追加时必须丢弃此位置之后的残尾。
+    uint64_t LastRecordEndOffset() const { return last_record_end_offset_; }
 
 private:
     // 读一条物理 Record（可能是 FULL/FIRST/MIDDLE/LAST 之一）
@@ -69,6 +71,7 @@ private:
     Slice     buffer_;               // 当前 Block 的可读视图
     bool      eof_;                  // 是否已到文件末尾
     uint64_t  last_record_offset_;   // 上一条完整记录的起始偏移
+    uint64_t  last_record_end_offset_ = 0;
     uint64_t  end_of_buffer_offset_; // buffer_ 末尾对应的文件偏移
 };
 
