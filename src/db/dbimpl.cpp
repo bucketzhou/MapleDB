@@ -3,6 +3,7 @@
 
 #include "db/dbimpl.h"
 
+#include "db/leveliterator.h"
 #include "db/tablecache.h"
 #include "db/writebatch.h"
 #include "util/coding.h"
@@ -1397,12 +1398,15 @@ Iterator* DBImpl::NewIterator() {
         imm->Unref();
     }
 
-    // 各层 SSTable（通过 TableCache 获取，无需重复打开文件）
+    // 修改：L0 文件可能重叠，仍分别归并；高层每层串联，避免每条记录遍历全部 SST。
     for (int level = 0; level < kNumLevels; level++) {
-        for (const FileMetaData& f : files_snapshot->files[level]) {
-            Table::Iterator* it = table_cache_->NewIterator(&f);
-            // 修复：失败的数据源也参与 status 汇总，不能当作空文件跳过。
-            list.push_back(it);
+        const auto& files = files_snapshot->files[level];
+        if (level == 0) {
+            for (const FileMetaData& f : files)
+                list.push_back(table_cache_->NewIterator(&f));
+        } else if (!files.empty()) {
+            // files_snapshot 仍由 merge 的清理函数固定，覆盖惰性打开文件及其元数据寿命。
+            list.push_back(new LevelIterator(table_cache_, &files, &icmp_));
         }
     }
 
