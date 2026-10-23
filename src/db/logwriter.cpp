@@ -3,6 +3,7 @@
 #include "db/logwriter.h"
 
 #include "util/coding.h"
+#include "util/crc32.h"
 
 #include <cassert>
 #include <cstring>
@@ -11,32 +12,6 @@
 namespace mapledb {
 namespace log {
 
-// ── 简易 CRC32 实现（教学用，LevelDB 用 crc32c 硬件加速版）────
-
-// 标准 CRC32 查找表（IEEE 802.3 多项式 0xEDB88320）
-static uint32_t crc_table[256];
-static bool     crc_table_init = false;
-
-static void InitCRCTable() {
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t c = i;
-        for (int j = 0; j < 8; j++) {
-            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-        }
-        crc_table[i] = c;
-    }
-    crc_table_init = true;
-}
-
-static uint32_t CRC32(const char* data, size_t len, uint32_t init_crc = 0xFFFFFFFFu) {
-    if (!crc_table_init)
-        InitCRCTable();
-    uint32_t c = init_crc;
-    for (size_t i = 0; i < len; i++) {
-        c = crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
-    }
-    return c ^ 0xFFFFFFFFu;
-}
 
 // ── Writer 构造/析构 ─────────────────────────────────────────
 
@@ -73,17 +48,9 @@ Writer::~Writer() {
 // ── ComputeCRC ───────────────────────────────────────────────
 
 uint32_t Writer::ComputeCRC(RecordType type, const char* data, size_t n) const {
-    // 先用 type 字节初始化 CRC（LevelDB 同款策略：type 参与校验）
-    char     type_byte = static_cast<char>(type);
-    uint32_t crc       = CRC32(&type_byte, 1);
-    // 再对 data 继续计算（保持 CRC 连续性需要传入中间值）
-    if (!crc_table_init)
-        InitCRCTable();
-    uint32_t c = crc ^ 0xFFFFFFFFu; // 反转回工作状态
-    for (size_t i = 0; i < n; i++) {
-        c = crc_table[(c ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (c >> 8);
-    }
-    return c ^ 0xFFFFFFFFu;
+    // 修改：保留 WAL 的 type 在前编码，使用同一线程安全快速 CRC，避免重复初始化逻辑。
+    const char type_byte = static_cast<char>(type);
+    return crc32::Extend(data, n, crc32::Extend(&type_byte, 1));
 }
 
 // ── EmitPhysicalRecord：写一条物理 Record ─────────────────────

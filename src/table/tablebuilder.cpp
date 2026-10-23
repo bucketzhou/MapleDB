@@ -11,6 +11,7 @@
 #include "table/blockbuilder.h"
 #include "util/bloom.h"
 #include "util/coding.h"
+#include "util/crc32.h"
 
 #include <cassert>
 #include <cstring>
@@ -18,29 +19,6 @@
 
 namespace mapledb {
 
-// ── CRC32 实现（与 WAL 保持一致）──────────────────────────────
-
-static uint32_t tb_crc_table[256];
-static bool     tb_crc_init = false;
-
-static void TBInitCRC() {
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t c = i;
-        for (int j = 0; j < 8; j++)
-            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-        tb_crc_table[i] = c;
-    }
-    tb_crc_init = true;
-}
-
-static uint32_t TBCRC32(const char* data, size_t len) {
-    if (!tb_crc_init)
-        TBInitCRC();
-    uint32_t c = 0xFFFFFFFFu;
-    for (size_t i = 0; i < len; i++)
-        c = tb_crc_table[(c ^ (uint8_t) data[i]) & 0xFF] ^ (c >> 8);
-    return c ^ 0xFFFFFFFFu;
-}
 
 // ── BlockBuilderWrapper：包装 BlockBuilder，让 .h 不暴露实现 ──
 
@@ -78,7 +56,7 @@ TableBuilder::~TableBuilder() {
 
 // ── ComputeCRC ────────────────────────────────────────────────
 
-uint32_t TableBuilder::ComputeCRC(const char* data, size_t n) const { return TBCRC32(data, n); }
+uint32_t TableBuilder::ComputeCRC(const char* data, size_t n) const { return crc32::Extend(data, n); }
 
 // ── WriteBlock：把一段字节流写入文件（追加 type+CRC 尾部）────────
 
@@ -100,17 +78,9 @@ void TableBuilder::WriteBlock(const Slice& block_contents, BlockHandle* handle) 
     char trailer[5];
     trailer[0] = 0; // kNoCompression
 
-    // 追加 4 字节 CRC32（对 block_contents + type 计算）
-    // 先计算 block_contents 的 CRC，再对 type 字节继续计算
-    uint32_t crc = TBCRC32(block_contents.Data(), block_contents.Size());
-    // 对 type 字节继续累加 CRC
-    // 注意：这里简化为重新计算整体（教学清晰优先）
-    {
-        // 拼接 block_contents + trailer[0] 一起计算 CRC
-        std::string tmp(block_contents.Data(), block_contents.Size());
-        tmp += trailer[0];
-        crc = TBCRC32(tmp.data(), tmp.size());
-    }
+    // 修改：正文只校验一次，再对 type 增量计算；不复制整块，也不改变磁盘校验格式。
+    uint32_t crc = crc32::Extend(block_contents.Data(), block_contents.Size());
+    crc = crc32::Extend(trailer, 1, crc);
     trailer[1] = static_cast<char>(crc & 0xFF);
     trailer[2] = static_cast<char>((crc >> 8) & 0xFF);
     trailer[3] = static_cast<char>((crc >> 16) & 0xFF);
