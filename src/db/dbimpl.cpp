@@ -1314,9 +1314,30 @@ void DBImpl::BackgroundCompaction() {
     Compaction* c = PickCompaction();
     if (c == nullptr)
         return;
-    lock.unlock();
-    Status s = DoCompactionWork(c);
-    lock.lock();
+    // 修改：单个输入且下一层无重叠时可只迁移元数据，避免重写并拆碎已有 SST。
+    bool move = c->inputs[0].size() == 1 && c->inputs[1].empty();
+    if (move && c->level + 2 < kNumLevels) {
+        std::vector<FileMetaData*> grandparents;
+        const auto* input = c->inputs[0][0];
+        versions_.GetOverlappingInputs(c->level + 2, input->smallest, input->largest, &grandparents);
+        const uint64_t limit = options_.max_file_size > UINT64_MAX / 10
+            ? UINT64_MAX : 10 * options_.max_file_size;
+        uint64_t bytes = 0;
+        for (const auto* file : grandparents) {
+            if (file->file_size > limit - bytes) { move = false; break; }
+            bytes += file->file_size;
+        }
+    }
+    Status s;
+    if (move) {
+        // 修改：复制元数据后沿用原 MANIFEST 原子安装；文件号/字节不变，墓碑也保留。
+        // 不能直接复用输入指针，LogAndApply 删除旧层元数据时会释放它。
+        c->outputs.push_back(new FileMetaData(*c->inputs[0][0]));
+    } else {
+        lock.unlock();
+        s = DoCompactionWork(c);
+        lock.lock();
+    }
     if (s.Ok())
         s = InstallCompactionResults(c);
     if (s.Ok())
