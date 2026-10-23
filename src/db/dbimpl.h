@@ -93,7 +93,9 @@ private:
     // 将 imm_ flush 到 Level 0 SSTable
     Status CompactMemTable();
     // 修改：只 Flush/安装当前 imm，进入和返回时均持有 lock；I/O 期间释放锁。
-    Status FlushImmutableMemTable(std::unique_lock<std::mutex>& lock);
+    Status FlushImmutableMemTable(std::unique_lock<std::mutex>& lock, bool allow_promotion = true);
+    // 修改：无重叠时 Flush 最多直接放到 L2，减少随后只为迁层而重写拆分的 SST。
+    int PickMemTableOutputLevel(const std::string& smallest, const std::string& largest) const;
 
     // 遍历 imm_ 的所有 entry，写成一个 SSTable 文件
     // 填充 edit（AddFile）和 meta（文件号、大小、key 范围）

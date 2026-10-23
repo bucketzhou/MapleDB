@@ -1001,7 +1001,8 @@ Status DBImpl::DoCompactionWork(Compaction* c) {
             if (has_imm_.load(std::memory_order_acquire)) {
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (imm_ != nullptr) {
-                    status = FlushImmutableMemTable(lock);
+                    // 修改：Major 输出尚未安装，不能仅按当前版本把新 imm 提升到其输出层。
+                    status = FlushImmutableMemTable(lock, false);
                     if (!status.Ok())
                         break;
                 }
@@ -1230,7 +1231,34 @@ void DBImpl::MaybeScheduleCompaction() {
     }
 }
 
-Status DBImpl::FlushImmutableMemTable(std::unique_lock<std::mutex>& lock) {
+int DBImpl::PickMemTableOutputLevel(const std::string& smallest, const std::string& largest) const {
+    std::vector<FileMetaData*> overlaps;
+    versions_.GetOverlappingInputs(0, smallest, largest, &overlaps);
+    if (!overlaps.empty())
+        return 0; // L0 新旧文件可能重叠，必须保留从浅层到深层的版本优先顺序。
+    const uint64_t limit = options_.max_file_size > UINT64_MAX / 10
+        ? UINT64_MAX : 10 * options_.max_file_size;
+    int level = 0;
+    while (level < 2) {
+        versions_.GetOverlappingInputs(level + 1, smallest, largest, &overlaps);
+        if (!overlaps.empty())
+            break;
+        // 修改：限制再深一层的重叠字节，避免直接落层后产生过大的后续合并。
+        versions_.GetOverlappingInputs(level + 2, smallest, largest, &overlaps);
+        uint64_t bytes = 0;
+        bool too_large = false;
+        for (const auto* file : overlaps) {
+            if (file->file_size > limit - bytes) { too_large = true; break; }
+            bytes += file->file_size;
+        }
+        if (too_large)
+            break;
+        ++level;
+    }
+    return level;
+}
+
+Status DBImpl::FlushImmutableMemTable(std::unique_lock<std::mutex>& lock, bool allow_promotion) {
     assert(lock.owns_lock() && imm_ != nullptr);
     if (!bg_error_.Ok())
         return bg_error_;
@@ -1246,7 +1274,9 @@ Status DBImpl::FlushImmutableMemTable(std::unique_lock<std::mutex>& lock) {
     lock.lock();
     if (s.Ok()) {
         if (file_size > 0 && !smallest.empty()) {
-            edit.AddFile(0, number, file_size, smallest, largest);
+            // 修改：仅普通 Flush 可提升；判断和安装都在 DB 锁内，同用户键也按重叠处理。
+            const int level = allow_promotion ? PickMemTableOutputLevel(smallest, largest) : 0;
+            edit.AddFile(level, number, file_size, smallest, largest);
             edit.SetLogNumber(log_number_);
             s = versions_.LogAndApply(&edit);
         } else {
