@@ -48,9 +48,9 @@ static void DeleteEntry(const Slice& /*key*/, void* value) {
 // ── 构造/析构 ────────────────────────────────────────────────────
 
 TableCache::TableCache(const std::string& dbname, const Options& options, const Comparator* cmp,
-                       int entries) :
+                       size_t entries) :
     dbname_(dbname), options_(options), cmp_(cmp),
-    cache_(NewLRUCache(static_cast<size_t>(entries))),
+    cache_(NewLRUCache(entries)),
     block_cache_id_(options.block_cache ? options.block_cache->NewId() : 0) {}
 
 TableCache::~TableCache() { delete cache_; }

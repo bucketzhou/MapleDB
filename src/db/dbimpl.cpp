@@ -41,14 +41,12 @@ std::string DBImpl::LogFileName(uint64_t number) const {
     return dbname_ + buf;
 }
 
-static constexpr int kTableCacheSize = 100; // 最多缓存 100 个 Table 对象
-
 // ── 构造/析构 ──────────────────────────────────────────────────
 
 DBImpl::DBImpl(const Options& options, const std::string& dbname) :
     dbname_(dbname), options_(options), icmp_(), mem_(nullptr), imm_(nullptr), log_writer_(nullptr),
     log_number_(0), versions_(dbname, options),
-    table_cache_(new TableCache(dbname, options, &icmp_, kTableCacheSize)),
+    table_cache_(new TableCache(dbname, options, &icmp_, options.table_cache_entries)),
     bg_scheduled_(false),   // Day 12 新增
     shutting_down_(false) { // Day 12 新增
                             // bg_thread_ 在 Open() 末尾启动，确保单线程恢复完成

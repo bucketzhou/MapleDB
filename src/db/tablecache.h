@@ -32,7 +32,7 @@ public:
     // cmp     : 用于打开 Table 的比较器（通常是 InternalKeyComparator*）
     // entries : Table 缓存最多可容纳的条目数
     TableCache(const std::string& dbname, const Options& options, const Comparator* cmp,
-               int entries);
+               size_t entries);
     ~TableCache();
 
     TableCache(const TableCache&)            = delete;

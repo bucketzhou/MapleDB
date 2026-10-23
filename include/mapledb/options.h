@@ -42,6 +42,9 @@ struct Options {
     // 缓存由调用方创建和拥有（DB 不负责 delete）。
     // 示例：options.block_cache = minidb::NewLRUCache(8 * 1024 * 1024); // 8MB
     Cache* block_cache = nullptr;
+    // 修改：表/索引/映射的条目预算可配置，避免 SST 较多时只能反复重开。
+    // 默认保持 100；0 表示不缓存，16 分片分别向上取整，预算不是字节数。
+    size_t table_cache_entries = 100;
     // 修改：64 位默认只读映射不可变 SST；失败自动回退 pread，可关闭以使用原块缓存路径。
     bool use_mmap_reads = true;
     // 同步写：WAL 内容落盘后才返回成功；默认仍使用原有异步写策略。
