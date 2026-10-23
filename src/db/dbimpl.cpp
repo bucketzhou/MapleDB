@@ -250,29 +250,72 @@ Status DBImpl::Delete(const std::string& key) {
 
 Status DBImpl::Write(WriteBatch* batch) {
     std::unique_lock<std::mutex> lock(mutex_);
+    Writer writer;
+    writer.batch = batch;
+    writers_.push_back(&writer);
+    while (!writer.done && writers_.front() != &writer)
+        writer.cv.wait(lock);
+    if (writer.done)
+        return writer.status;
 
-    // ① 等待 mem_ 有空间（可能等待后台 Flush）
+    // 修改：仅队首允许轮转 mem_/WAL；其他写者等待，读者仍可取得 DB 锁。
     Status s = MakeRoomForWrite(lock);
-    if (!s.Ok())
-        return s;
-
-    // ② 分配序列号 （在锁内，原子性由锁保证）
-    SequenceNumber seq = versions_.LastSequence() + 1;
-    WriteBatchInternal::SetSequence(batch, seq);
-    versions_.SetLastSequence(seq + WriteBatchInternal::Count(batch) - 1);
-
-    // ③ 写 WAL（持久化保证：先写日志）
-    s = log_writer_->AddRecord(WriteBatchInternal::Contents(batch), options_.sync_writes);
-    if (s.Ok() && !options_.sync_writes)
-        s = log_writer_->Flush();
-    if (!s.Ok()) {
-        // 修复：日志可能只写了一部分；停止后续写入，且不发布失败的数据。
-        bg_error_ = s;
-        return s;
+    Writer* last = &writer;
+    WriteBatch group;
+    WriteBatch* updates = batch;
+    SequenceNumber last_sequence = versions_.LastSequence();
+    if (s.Ok()) {
+        // 修改：只合并已经排队的相邻请求，不主动等待；上限限制单组占用时间。
+        // sync_writes 是整个 DB 的配置，组内所有请求共享相同的持久化要求。
+        constexpr size_t kMaxGroupBytes = 128 * 1024;
+        size_t bytes = batch->ByteSize();
+        for (size_t i = 1; i < writers_.size(); ++i) {
+            Writer* next = writers_[i];
+            if (bytes >= kMaxGroupBytes || next->batch->ByteSize() > kMaxGroupBytes - bytes)
+                break;
+            if (updates == batch) {
+                group.Append(*batch);
+                updates = &group;
+            }
+            group.Append(*next->batch);
+            bytes += next->batch->ByteSize();
+            last = next;
+        }
+        const int count = WriteBatchInternal::Count(updates);
+        if (count <= 0 || static_cast<uint64_t>(count) > kMaxSequenceNumber - last_sequence) {
+            s = Status::InvalidArgument("write sequence exhausted");
+        } else {
+            WriteBatchInternal::SetSequence(updates, last_sequence + 1);
+            last_sequence += count;
+            // 修改：队首身份保证单写者，解锁执行 WAL 和跳表插入，避免阻塞所有 Get。
+            // 此时 LastSequence 仍为旧值，读者会跳过尚未整组提交的新版本。
+            lock.unlock();
+            s = log_writer_->AddRecord(WriteBatchInternal::Contents(updates), options_.sync_writes);
+            if (s.Ok() && !options_.sync_writes)
+                s = log_writer_->Flush();
+            if (s.Ok())
+                s = WriteBatchInternal::InsertInto(updates, mem_);
+            lock.lock();
+            if (s.Ok())
+                versions_.SetLastSequence(last_sequence); // 整组完成后一次发布可见序列号。
+            else if (bg_error_.Ok())
+                bg_error_ = s; // 日志可能部分写入：停止后续写入，不发布失败的组。
+        }
     }
-
-    // ④ 写 MemTable（内存操作，快速）
-    s = WriteBatchInternal::InsertInto(batch, mem_);
+    // 修改：整组返回同一结果；先出队再唤醒，避免引用已返回调用的栈节点。
+    while (true) {
+        Writer* ready = writers_.front();
+        writers_.pop_front();
+        if (ready != &writer) {
+            ready->status = s;
+            ready->done = true;
+            ready->cv.notify_one();
+        }
+        if (ready == last)
+            break;
+    }
+    if (!writers_.empty())
+        writers_.front()->cv.notify_one();
     return s;
 }
 

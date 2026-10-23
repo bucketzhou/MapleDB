@@ -31,6 +31,7 @@
     #include <atomic>
     #include <condition_variable>
     #include <cstdint>
+    #include <deque>
     #include <map>
     #include <memory>
     #include <mutex>
@@ -73,6 +74,15 @@ private:
 
     // 以 WriteBatch 写入（Put/Delete 的底层实现）
     Status Write(WriteBatch* batch);
+
+    // 修改：调用线程在队列中等待，只有队首能操作 WAL/mem_，因此 I/O 可释放 DB 锁。
+    struct Writer {
+        WriteBatch* batch;
+        bool done = false;
+        Status status;
+        std::condition_variable cv;
+    };
+    std::deque<Writer*> writers_; // mutex_ 保护；节点由尚未返回的 Write 调用持有。
 
     // 确保 mem_ 有足够空间接收新写入
     // MemTable 满时：切换到新 MemTable，触发同步 Flush
