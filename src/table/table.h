@@ -80,7 +80,7 @@ public:
 private:
     // Table 的内部数据
     struct Rep {
-        FILE*             file;
+        int               fd; // 按偏移读取，避免共享 stdio 状态及 fileno 内部锁。
         uint64_t          file_size;
         Block*            index_block; // Index Block 常驻内存，避免每次查询都重读
         Options           options;

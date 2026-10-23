@@ -20,7 +20,9 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <memory>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace mapledb {
@@ -40,21 +42,36 @@ static Status CheckBlock(const char* data, size_t size, const char* trailer) {
     return Status::OK();
 }
 
-static Status ReadMetadata(FILE* file, const BlockHandle& handle, std::string* contents) {
+// 修改：元数据和数据块共用按偏移读取，短读/EINTR 继续，真实错误及提前 EOF 返回失败。
+static bool ReadAt(int fd, char* data, size_t size, uint64_t offset) {
+    size_t done = 0;
+    while (done < size) {
+        const ssize_t n = pread(fd, data + done, size - done, static_cast<off_t>(offset + done));
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return false;
+        done += static_cast<size_t>(n);
+    }
+    return true;
+}
+
+static Status ReadMetadata(int fd, const BlockHandle& handle, std::string* contents) {
     // 调用前已按文件/元数据边界验证 handle；过滤器也必须校验 CRC 后才能用于排除 key。
+    if (handle.size() > SIZE_MAX - 5)
+        return Status::Corruption("metadata block size overflow");
     contents->resize(static_cast<size_t>(handle.size()) + 5);
-    if (fseek(file, static_cast<long>(handle.offset()), SEEK_SET) != 0
-        || fread(contents->data(), 1, contents->size(), file) != contents->size())
+    if (!ReadAt(fd, contents->data(), contents->size(), handle.offset()))
         return Status::IOError("cannot read SSTable filter metadata");
     Status s = CheckBlock(contents->data(), handle.size(), contents->data() + handle.size());
     contents->resize(handle.size());
     return s;
 }
 
-static Status ReadFilter(FILE* file, const BlockHandle& meta_handle, const Comparator* cmp,
+static Status ReadFilter(int fd, const BlockHandle& meta_handle, const Comparator* cmp,
                          std::string* filter) {
     std::string contents;
-    Status s = ReadMetadata(file, meta_handle, &contents);
+    Status s = ReadMetadata(fd, meta_handle, &contents);
     if (!s.Ok())
         return s;
     Block meta(contents.data(), contents.size());
@@ -72,7 +89,7 @@ static Status ReadFilter(FILE* file, const BlockHandle& meta_handle, const Compa
     if (!encoded.Empty() || !handle.ValidWithin(meta_handle.offset())
         || handle.size() < 2 || handle.size() - 1 > UINT32_MAX / 8)
         return Status::Corruption("invalid SSTable filter handle");
-    s = ReadMetadata(file, handle, filter);
+    s = ReadMetadata(fd, handle, filter);
     if (!s.Ok())
         return s;
     // 拒绝残缺过滤器或非法探测次数，避免把已有 key 误判为不存在。
@@ -87,109 +104,63 @@ static Status ReadFilter(FILE* file, const BlockHandle& meta_handle, const Compa
 Status Table::Open(const std::string& filename, const Options& options, const Comparator* cmp,
                    Table** table, uint64_t cache_id, uint64_t file_number) {
     *table = nullptr;
-
-    FILE* f = fopen(filename.c_str(), "rb");
-    if (!f) {
+    // 修改：直接打开 fd；局部守卫覆盖所有错误路径，成功后再转交 Table。
+    struct FileGuard {
+        int fd;
+        ~FileGuard() { if (fd >= 0) close(fd); }
+    } file{open(filename.c_str(), O_RDONLY | O_CLOEXEC)};
+    if (file.fd < 0)
         return Status::IOError("cannot open SSTable: " + filename);
-    }
-
-    // 获取文件大小
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        return Status::IOError("cannot seek SSTable");
-    }
-    const long end = ftell(f);
-    if (end < 0) {
-        fclose(f);
-        return Status::IOError("cannot get SSTable size");
-    }
-    uint64_t file_size = static_cast<uint64_t>(end);
-
-    if (file_size < Footer::kEncodedLength) {
-        fclose(f);
+    struct stat info;
+    if (fstat(file.fd, &info) != 0 || info.st_size < 0)
+        return Status::IOError("cannot stat SSTable: " + filename);
+    const uint64_t file_size = static_cast<uint64_t>(info.st_size);
+    if (file_size < Footer::kEncodedLength)
         return Status::Corruption("SSTable file too small");
-    }
 
-    // ① 读 Footer（末尾固定 48 字节）
     char footer_buf[Footer::kEncodedLength];
-    if (fseek(f, -static_cast<long>(Footer::kEncodedLength), SEEK_END) != 0
-        || fread(footer_buf, 1, Footer::kEncodedLength, f) != Footer::kEncodedLength) {
-        fclose(f);
+    if (!ReadAt(file.fd, footer_buf, sizeof(footer_buf), file_size - sizeof(footer_buf)))
         return Status::IOError("cannot read SSTable footer");
-    }
-
     Footer footer;
-    Status s = footer.DecodeFrom(Slice(footer_buf, Footer::kEncodedLength));
-    if (!s.Ok()) {
-        fclose(f);
+    Status s = footer.DecodeFrom(Slice(footer_buf, sizeof(footer_buf)));
+    if (!s.Ok())
         return s;
-    }
-
-    // ② 根据 index_handle 读取 Index Block，常驻内存
-    Block*      index_block     = nullptr;
-    BlockHandle ih              = footer.index_handle();
-    // 修复：先限制块范围再分配内存；metaindex 必须位于 index 之前，数据块位于其前。
-    if (!ih.ValidWithin(file_size - Footer::kEncodedLength)
-        || !footer.metaindex_handle().ValidWithin(ih.offset())) {
-        fclose(f);
+    const BlockHandle ih = footer.index_handle();
+    if (!ih.ValidWithin(file_size - Footer::kEncodedLength) ||
+        !footer.metaindex_handle().ValidWithin(ih.offset()) || ih.size() > SIZE_MAX - 5)
         return Status::Corruption("SSTable block handle outside file");
-    }
-    size_t      block_data_size = static_cast<size_t>(ih.size());
 
-    char* buf = new char[block_data_size];
-    if (fseek(f, static_cast<long>(ih.offset()), SEEK_SET) != 0
-        || fread(buf, 1, block_data_size, f) != block_data_size) {
-        delete[] buf;
-        fclose(f);
+    // 索引正文和校验尾部一次读取，校验通过后才能构造 Block。
+    const size_t n = static_cast<size_t>(ih.size());
+    auto bytes = std::make_unique<char[]>(n + 5);
+    if (!ReadAt(file.fd, bytes.get(), n + 5, ih.offset()))
         return Status::IOError("cannot read index block");
-    }
-
-    // 跳过 Index Block 的 5 字节物理尾部（type + CRC）
-    char trailer[5];
-    if (fread(trailer, 1, 5, f) != 5) {
-        delete[] buf;
-        fclose(f);
-        return Status::IOError("cannot read index block trailer");
-    }
-    s = CheckBlock(buf, block_data_size, trailer);
-    if (!s.Ok()) {
-        delete[] buf;
-        fclose(f);
+    s = CheckBlock(bytes.get(), n, bytes.get() + n);
+    if (!s.Ok())
         return s;
-    }
-
-    index_block = new Block(buf, block_data_size, true /* owned，析构时 delete[] */);
-    if (!index_block->status().Ok()) {
-        s = index_block->status();
-        delete index_block;
-        fclose(f);
-        return s;
-    }
-
+    auto index = std::make_unique<Block>(bytes.release(), n, true);
+    if (!index->status().Ok())
+        return index->status();
     std::string filter;
     if (options.bloom_bits_per_key > 0) {
-        s = ReadFilter(f, footer.metaindex_handle(), cmp, &filter);
-        if (!s.Ok()) {
-            delete index_block;
-            fclose(f);
+        s = ReadFilter(file.fd, footer.metaindex_handle(), cmp, &filter);
+        if (!s.Ok())
             return s;
-        }
     }
 
-    // ③ 构建 Rep 并返回 Table 对象
-    Rep* rep              = new Rep;
-    rep->file             = f;
-    rep->file_size        = file_size;
-    rep->index_block      = index_block;
-    rep->options          = options;
+    auto* rep = new Rep;
+    rep->fd = file.fd;
+    rep->file_size = file_size;
+    rep->index_block = index.release();
+    rep->options = options;
     rep->metaindex_handle = footer.metaindex_handle();
-    rep->filter           = std::move(filter);
-    rep->cmp              = cmp; // ← 保存比较器
-
-    // 修改：TableCache 提供稳定命名空间；独立打开 Table 时仍分配独有 ID，防止串库。
+    rep->filter = std::move(filter);
+    rep->cmp = cmp;
+    // TableCache 使用稳定命名空间；独立打开时仍分配独有 ID，避免跨库串块。
     rep->cache_id = options.block_cache ? (cache_id ? cache_id : options.block_cache->NewId()) : 0;
     rep->file_number = file_number;
-    *table        = new Table(rep);
+    *table = new Table(rep);
+    file.fd = -1;
     return Status::OK();
 }
 
@@ -197,8 +168,7 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
 
 Table::~Table() {
     delete rep_->index_block;
-    if (rep_->file)
-        fclose(rep_->file);
+    close(rep_->fd);
     delete rep_;
 }
 
@@ -274,22 +244,7 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
         return Status::Corruption("data block size overflow");
     char*  buf = new char[n + 5];
 
-    // 修复：同一个 Table 会被并发 Get 共享，fseek/fread 组合会互相改写文件位置。
-    // pread 使用独立偏移，且短读/信号中断时继续读取剩余字节。
-    auto read_at = [this](char* dst, size_t size, uint64_t offset) {
-        size_t done = 0;
-        while (done < size) {
-            ssize_t count = pread(fileno(rep_->file), dst + done, size - done,
-                                  static_cast<off_t>(offset + done));
-            if (count < 0 && errno == EINTR)
-                continue;
-            if (count <= 0)
-                return false;
-            done += static_cast<size_t>(count);
-        }
-        return true;
-    };
-    if (!read_at(buf, n + 5, handle.offset())) {
+    if (!ReadAt(rep_->fd, buf, n + 5, handle.offset())) {
         delete[] buf;
         return Status::IOError("cannot read data block");
     }
