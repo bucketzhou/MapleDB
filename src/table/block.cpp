@@ -15,7 +15,9 @@ namespace mapledb {
 
 // ── Block 构造函数 ─────────────────────────────────────────────
 
-Block::Block(const char* data, size_t size, bool owned) : data_(data), size_(size), owned_(owned) {
+Block::Block(const char* data, size_t size, bool owned,
+             const std::shared_ptr<const void>& data_owner) :
+    data_(data), size_(size), owned_(owned), data_owner_(data_owner) {
     // Block 末尾 4 字节是 num_restarts（fixed32 小端序）
     if (size_ < sizeof(uint32_t) || size_ > UINT32_MAX) {
         // 修复：结构损坏必须保留错误，迭代器才能区分空数据与损坏数据。

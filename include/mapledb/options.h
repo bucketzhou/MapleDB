@@ -38,10 +38,12 @@ struct Options {
     bool create_if_missing = true;
 
     // SSTable Data Block 缓存（可选）。
-    // 若非 nullptr，Table::ReadBlock 会先查询此缓存再访问磁盘。
+    // pread 路径先查询此缓存；映射路径复用操作系统页缓存，不重复缓存映射数据。
     // 缓存由调用方创建和拥有（DB 不负责 delete）。
     // 示例：options.block_cache = minidb::NewLRUCache(8 * 1024 * 1024); // 8MB
     Cache* block_cache = nullptr;
+    // 修改：64 位默认只读映射不可变 SST；失败自动回退 pread，可关闭以使用原块缓存路径。
+    bool use_mmap_reads = true;
     // 同步写：WAL 内容落盘后才返回成功；默认仍使用原有异步写策略。
     bool sync_writes = false;
 };

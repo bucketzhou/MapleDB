@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <memory>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 namespace mapledb {
@@ -43,7 +44,12 @@ static Status CheckBlock(const char* data, size_t size, const char* trailer) {
 }
 
 // 修改：元数据和数据块共用按偏移读取，短读/EINTR 继续，真实错误及提前 EOF 返回失败。
-static bool ReadAt(int fd, char* data, size_t size, uint64_t offset) {
+static bool ReadAt(int fd, char* data, size_t size, uint64_t offset, const void* mapping = nullptr) {
+    // 调用方先验证范围；元数据从映射区复制到独立缓冲，保留打开时已校验的索引快照。
+    if (mapping) {
+        memcpy(data, static_cast<const char*>(mapping) + offset, size);
+        return true;
+    }
     size_t done = 0;
     while (done < size) {
         const ssize_t n = pread(fd, data + done, size - done, static_cast<off_t>(offset + done));
@@ -56,12 +62,13 @@ static bool ReadAt(int fd, char* data, size_t size, uint64_t offset) {
     return true;
 }
 
-static Status ReadMetadata(int fd, const BlockHandle& handle, std::string* contents) {
+static Status ReadMetadata(int fd, const BlockHandle& handle, std::string* contents,
+                           const void* mapping) {
     // 调用前已按文件/元数据边界验证 handle；过滤器也必须校验 CRC 后才能用于排除 key。
     if (handle.size() > SIZE_MAX - 5)
         return Status::Corruption("metadata block size overflow");
     contents->resize(static_cast<size_t>(handle.size()) + 5);
-    if (!ReadAt(fd, contents->data(), contents->size(), handle.offset()))
+    if (!ReadAt(fd, contents->data(), contents->size(), handle.offset(), mapping))
         return Status::IOError("cannot read SSTable filter metadata");
     Status s = CheckBlock(contents->data(), handle.size(), contents->data() + handle.size());
     contents->resize(handle.size());
@@ -69,9 +76,9 @@ static Status ReadMetadata(int fd, const BlockHandle& handle, std::string* conte
 }
 
 static Status ReadFilter(int fd, const BlockHandle& meta_handle, const Comparator* cmp,
-                         std::string* filter) {
+                         std::string* filter, const void* mapping) {
     std::string contents;
-    Status s = ReadMetadata(fd, meta_handle, &contents);
+    Status s = ReadMetadata(fd, meta_handle, &contents, mapping);
     if (!s.Ok())
         return s;
     Block meta(contents.data(), contents.size());
@@ -89,7 +96,7 @@ static Status ReadFilter(int fd, const BlockHandle& meta_handle, const Comparato
     if (!encoded.Empty() || !handle.ValidWithin(meta_handle.offset())
         || handle.size() < 2 || handle.size() - 1 > UINT32_MAX / 8)
         return Status::Corruption("invalid SSTable filter handle");
-    s = ReadMetadata(fd, handle, filter);
+    s = ReadMetadata(fd, handle, filter, mapping);
     if (!s.Ok())
         return s;
     // 拒绝残缺过滤器或非法探测次数，避免把已有 key 误判为不存在。
@@ -118,8 +125,20 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     if (file_size < Footer::kEncodedLength)
         return Status::Corruption("SSTable file too small");
 
+    std::shared_ptr<const void> mapping;
+    if (options.use_mmap_reads && sizeof(void*) >= 8 && file_size <= SIZE_MAX) {
+        void* base = mmap(nullptr, static_cast<size_t>(file_size), PROT_READ, MAP_SHARED, file.fd, 0);
+        if (base != MAP_FAILED) {
+            // 修改：映射由最后一个 Table/Block 所有者释放，不能仅随 Table 析构解除。
+            mapping = {base, [file_size](const void* p) {
+                munmap(const_cast<void*>(p), static_cast<size_t>(file_size));
+            }};
+        }
+        // mmap 失败仍走原 pread 路径，保持低虚拟地址空间/文件系统限制下可读。
+    }
+
     char footer_buf[Footer::kEncodedLength];
-    if (!ReadAt(file.fd, footer_buf, sizeof(footer_buf), file_size - sizeof(footer_buf)))
+    if (!ReadAt(file.fd, footer_buf, sizeof(footer_buf), file_size - sizeof(footer_buf), mapping.get()))
         return Status::IOError("cannot read SSTable footer");
     Footer footer;
     Status s = footer.DecodeFrom(Slice(footer_buf, sizeof(footer_buf)));
@@ -133,7 +152,7 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
     // 索引正文和校验尾部一次读取，校验通过后才能构造 Block。
     const size_t n = static_cast<size_t>(ih.size());
     auto bytes = std::make_unique<char[]>(n + 5);
-    if (!ReadAt(file.fd, bytes.get(), n + 5, ih.offset()))
+    if (!ReadAt(file.fd, bytes.get(), n + 5, ih.offset(), mapping.get()))
         return Status::IOError("cannot read index block");
     s = CheckBlock(bytes.get(), n, bytes.get() + n);
     if (!s.Ok())
@@ -143,13 +162,14 @@ Status Table::Open(const std::string& filename, const Options& options, const Co
         return index->status();
     std::string filter;
     if (options.bloom_bits_per_key > 0) {
-        s = ReadFilter(file.fd, footer.metaindex_handle(), cmp, &filter);
+        s = ReadFilter(file.fd, footer.metaindex_handle(), cmp, &filter, mapping.get());
         if (!s.Ok())
             return s;
     }
 
     auto* rep = new Rep;
     rep->fd = file.fd;
+    rep->mapping = std::move(mapping);
     rep->file_size = file_size;
     rep->index_block = index.release();
     rep->options = options;
@@ -215,6 +235,20 @@ Status Table::ReadBlock(const BlockHandle& handle, Block** result) const {
     // 修复：在缓存查询和内存分配之前验证范围，损坏 handle 不能读取元数据区域。
     if (!handle.ValidWithin(rep_->metaindex_handle.offset()))
         return Status::Corruption("data block handle outside data region");
+
+    if (rep_->mapping) {
+        const size_t n = static_cast<size_t>(handle.size());
+        const char* data = static_cast<const char*>(rep_->mapping.get()) + handle.offset();
+        Status s = CheckBlock(data, n, data + n);
+        if (!s.Ok())
+            return s;
+        // 修改：直接使用映射字节，每次仍校验 CRC，不在块缓存中重复缓存整片映射。
+        auto block = std::make_unique<Block>(data, n, false, rep_->mapping);
+        if (!block->status().Ok())
+            return block->status();
+        *result = block.release();
+        return Status::OK();
+    }
 
     // ── Day11: 尝试 BlockCache 命中 ───────────────────────
     Cache* bc = rep_->options.block_cache;

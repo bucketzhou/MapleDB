@@ -47,7 +47,8 @@ public:
     // data  : Block 字节流起始指针
     // size  : 字节流大小（不含物理尾部 type+CRC 5字节）
     // owned : true 则析构时 delete[] data
-    explicit Block(const char* data, size_t size, bool owned = false);
+    explicit Block(const char* data, size_t size, bool owned = false,
+                   const std::shared_ptr<const void>& data_owner = {});
     // 修改：缓存命中返回小型只读视图，复用已校验结构；共享所有权覆盖读者生命周期。
     explicit Block(const std::shared_ptr<const Block>& backing);
     ~Block();
@@ -336,6 +337,7 @@ private:
     uint32_t    num_restarts_;
     uint32_t    restart_offset_;
     Status      status_; // 非法块结构必须报告损坏，不能伪装为空块。
+    std::shared_ptr<const void> data_owner_; // 映射块持有整个区域，Table 淘汰后仍可安全读取。
     std::shared_ptr<const Block> backing_; // 视图持有原块，淘汰缓存也不会使 data_ 悬空。
 };
 
