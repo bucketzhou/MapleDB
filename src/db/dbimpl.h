@@ -28,6 +28,7 @@
     #include "table/table.h"
     #include "table/tablebuilder.h"
 
+    #include <atomic>
     #include <condition_variable>
     #include <cstdint>
     #include <map>
@@ -81,6 +82,8 @@ private:
 
     // 将 imm_ flush 到 Level 0 SSTable
     Status CompactMemTable();
+    // 修改：只 Flush/安装当前 imm，进入和返回时均持有 lock；I/O 期间释放锁。
+    Status FlushImmutableMemTable(std::unique_lock<std::mutex>& lock);
 
     // 遍历 imm_ 的所有 entry，写成一个 SSTable 文件
     // 填充 edit（AddFile）和 meta（文件号、大小、key 范围）
@@ -145,6 +148,7 @@ private:
 
     MemTable* mem_; // 当前可写 MemTable
     MemTable* imm_; // 不可变 MemTable（等待 Flush）
+    std::atomic<bool> has_imm_{false}; // 合并循环快速检查；指针仍须在 mutex_ 内复核。
 
     log::Writer* log_writer_; // 当前 WAL 写入器
     uint64_t     log_number_; // 当前 WAL 文件号
