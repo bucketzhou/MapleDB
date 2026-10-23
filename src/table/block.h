@@ -308,13 +308,9 @@ public:
             if (!Valid())
                 return restart_offset_;
 
-            const char* p     = data_ + current_;
-            const char* limit = data_ + restart_offset_;
-            uint32_t    shared, non_shared, value_length;
-            const char* key_ptr = DecodeEntryHeader(p, limit, &shared, &non_shared, &value_length);
-            if (key_ptr == nullptr)
-                return restart_offset_;
-            return static_cast<uint32_t>((key_ptr + non_shared + value_length) - data_);
+            // 修改：当前 value 的范围已由 ParseCurrentEntry 校验，其结尾就是下一条起点。
+            // 复用已解码的范围，避免 Next/Prev/SeekToLast 为计算偏移再次解析旧 header。
+            return static_cast<uint32_t>((value_.Data() + value_.Size()) - data_);
         }
 
         void CorruptionError() {
