@@ -52,7 +52,7 @@ public:
     // 返回 user_key（已剥离 InternalKey 的 8 字节 tag）
     const Slice& key() const override;
 
-    // 返回 value（tombstone 已过滤）
+    // 返回 value（tombstone 已过滤）；借用底层数据，有效期到下次移动或析构。
     const Slice& value() const override;
 
     Status status() const override;
@@ -60,17 +60,16 @@ public:
 private:
     // 从 input_ 当前位置向前推进，找到下一个对用户可见的 user_key
     // skipping   : true = 需要跳过 skip_key 及其所有旧版本
-    // skip_key   : 要跳过的 user_key（仅 skipping=true 时有效）
-    void FindNextUserEntry(bool skipping, const std::string& skip_key);
+    // 修改：直接复用 saved_key_ 保存待跳过的用户键，避免每次 Next 再复制一份。
+    void FindNextUserEntry(bool skipping);
 
     Iterator*                    input_;    // 内部多路归并迭代器
     const SequenceNumber         sequence_; // 快照序列号
     const InternalKeyComparator& icmp_;
     bool                         valid_;       // 当前是否有效
     std::string                  saved_key_;   // 当前 user_key 的副本
-    std::string                  saved_value_; // 当前 value 的副本
     Slice                        key_slice_;   // 指向 saved_key_
-    Slice                        value_slice_; // 指向 saved_value_
+    Slice                        value_slice_; // 借用 input_ 当前条目的 value
 };
 
 } // namespace mapledb
