@@ -39,6 +39,17 @@ struct LRUHandle {
     }
 };
 
+// 修改：条目已从哈希表/LRU 脱离且引用归零后，才可在分片锁外同步销毁。
+// next 复用为私有待释放链表，不额外分配内存；key 仍活到 deleter 返回。
+static void DeleteRetired(LRUHandle* entry) {
+    while (entry) {
+        LRUHandle* next = entry->next;
+        (*entry->deleter)(entry->key(), entry->value);
+        free(entry);
+        entry = next;
+    }
+}
+
 // ════════════════════════════════════════════════════════════════
 // HandleTable — 拉链法哈希表
 // ════════════════════════════════════════════════════════════════
@@ -143,9 +154,16 @@ public:
             Unref(e);
             e = next;
         }
+        DeleteRetired(TakeRetired()); // 析构要求无并发操作，此处本来就不持分片锁。
     }
 
     void SetCapacity(size_t cap) { capacity_ = cap; }
+    // 修改：调用方持分片锁取走整条链，解锁后释放；不能让其他线程接触这些零引用条目。
+    LRUHandle* TakeRetired() {
+        LRUHandle* result = retired_;
+        retired_ = nullptr;
+        return result;
+    }
 
     // ── Insert ─────────────────────────────────────────────────
     Cache::Handle* Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
@@ -237,15 +255,15 @@ private:
     }
 
     // 减少引用计数：
-    //   refs == 0 → 调用 deleter，释放内存
+    //   refs == 0 → 登记待释放条目，调用方解锁后调用 deleter
     //   refs == 1 且 in_cache → 移回 lru_ 链表（可淘汰）
     void Unref(LRUHandle* e) {
         assert(e->refs > 0);
         e->refs--;
         if (e->refs == 0) {
             assert(!e->in_cache);
-            (*e->deleter)(e->key(), e->value);
-            free(e);
+            e->next = retired_;
+            retired_ = e;
         } else if (e->in_cache && e->refs == 1) {
             // 从 in_use_ 移到 lru_ 尾部（MRU 端）
             LRU_Remove(e);
@@ -271,6 +289,7 @@ private:
     LRUHandle   lru_;    // 可淘汰链表（dummy head）；lru_.next 是 LRU 端
     LRUHandle   in_use_; // 被持有链表（dummy head）
     HandleTable table_;
+    LRUHandle*  retired_ = nullptr; // 分片锁保护，只含已脱链、零引用的条目。
 };
 
 static uint32_t HashSlice(const Slice& s) {
@@ -335,8 +354,15 @@ public:
                    void (*deleter)(const Slice&, void*)) override {
         const uint32_t              hash = HashSlice(key);
         const uint32_t              s    = Shard(hash);
-        std::lock_guard<std::mutex> lk(mu_[s]);
-        return shard_[s].Insert(key, hash, value, charge, deleter);
+        Handle* result;
+        LRUHandle* retired;
+        {
+            std::lock_guard<std::mutex> lk(mu_[s]);
+            result = shard_[s].Insert(key, hash, value, charge, deleter);
+            retired = shard_[s].TakeRetired();
+        }
+        DeleteRetired(retired); // 修改：close/munmap 等慢回调不再阻塞同分片 Lookup。
+        return result;
     }
 
     Handle* Lookup(const Slice& key) override {
@@ -349,8 +375,13 @@ public:
     void Release(Handle* handle) override {
         LRUHandle*                  h = reinterpret_cast<LRUHandle*>(handle);
         const uint32_t              s = Shard(h->hash);
-        std::lock_guard<std::mutex> lk(mu_[s]);
-        shard_[s].Release(handle);
+        LRUHandle* retired;
+        {
+            std::lock_guard<std::mutex> lk(mu_[s]);
+            shard_[s].Release(handle);
+            retired = shard_[s].TakeRetired();
+        }
+        DeleteRetired(retired);
     }
 
     void* Value(Handle* handle) override { return reinterpret_cast<LRUHandle*>(handle)->value; }
@@ -358,8 +389,13 @@ public:
     void Erase(const Slice& key) override {
         const uint32_t              hash = HashSlice(key);
         const uint32_t              s    = Shard(hash);
-        std::lock_guard<std::mutex> lk(mu_[s]);
-        shard_[s].Erase(key, hash);
+        LRUHandle* retired;
+        {
+            std::lock_guard<std::mutex> lk(mu_[s]);
+            shard_[s].Erase(key, hash);
+            retired = shard_[s].TakeRetired();
+        }
+        DeleteRetired(retired);
     }
 
     uint64_t NewId() override {
@@ -369,8 +405,13 @@ public:
 
     void Prune() override {
         for (int i = 0; i < kNumShards; i++) {
-            std::lock_guard<std::mutex> lk(mu_[i]);
-            shard_[i].Prune();
+            LRUHandle* retired;
+            {
+                std::lock_guard<std::mutex> lk(mu_[i]);
+                shard_[i].Prune();
+                retired = shard_[i].TakeRetired();
+            }
+            DeleteRetired(retired);
         }
     }
 
